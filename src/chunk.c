@@ -1,4 +1,5 @@
 #include "chunk.h"
+#include "memory.h"
 
 void ChunkInit(Chunk* chunk) {
     chunk->Count = 0;
@@ -17,4 +18,9 @@ void ChunkWrite(Chunk* chunk, uint8_t byte) {
     //Store byte on array and increase the number of elements.
     chunk->Code[chunk->Count] = byte;
     chunk->Count++;
+}
+
+void ChunkFree(Chunk* chunk) {
+    FREE_ARRAY(uint8_t, chunk->Code, chunk->Capacity);
+    ChunkInit(chunk);
 }
