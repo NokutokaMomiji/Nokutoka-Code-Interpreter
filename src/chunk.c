@@ -37,6 +37,18 @@ void ChunkWrite(Chunk* chunk, uint8_t byte) {
     chunk->Lines[chunk->currentLine]++;
 }
 
+void ChunkWriteLong(Chunk* chunk, long number) {
+    uint8_t firstByte = (number & 0xff000000UL) >> 24;
+    uint8_t secondByte = (number & 0x00ff0000UL) >> 16;
+    uint8_t thirdByte = (number & 0x0000ff00UL) >> 8;
+    uint8_t fourthByte = (number & 0x000000ffUL);
+
+    ChunkWrite(chunk, firstByte);
+    ChunkWrite(chunk, secondByte);
+    ChunkWrite(chunk, thirdByte);
+    ChunkWrite(chunk, fourthByte);
+}
+
 int ChunkAddConstant(Chunk* chunk, Value value) {
     ValueArrayWrite(&chunk->Constants, value);
     return chunk->Constants.Count - 1;

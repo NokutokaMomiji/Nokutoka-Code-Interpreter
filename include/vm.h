@@ -1,0 +1,31 @@
+#ifndef NKCODE_VM_H
+#define NKCODE_VM_H
+
+#include "chunk.h"
+#include "value.h"
+
+#define DEBUG_TRACE_EXECUTION
+
+#define STACK_MAX 256
+
+typedef struct {
+    Chunk* chunk;
+    uint8_t* IP;
+    Value Stack[STACK_MAX];
+    Value* stackTop;
+} VM;
+
+typedef enum {
+    INTERPRET_OK,
+    INTERPRET_COMPILE_ERROR,
+    INTERPRET_RUNTIME_ERROR
+} InterpretResult;
+
+void VMInit();
+void VMFree();
+InterpretResult Interpret(Chunk* chunk);
+
+void Push(Value value);
+Value Pop();
+
+#endif

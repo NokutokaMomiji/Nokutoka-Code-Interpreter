@@ -29,6 +29,18 @@ static int ConstantInstruction(const char* name, Chunk* chunk, int offset) {
     return offset + 2; //We skip over the Constant Operation Code + the Constant Index.
 }
 
+static int ConstantLongInstruction(const char* name, Chunk* chunk, int offset) {
+    long constantIndex = chunk->Code[offset + 1] << 24;
+    constantIndex += chunk->Code[offset + 2] << 16;
+    constantIndex += chunk->Code[offset + 3] << 8;
+    constantIndex += chunk->Code[offset + 4];
+
+    printf("%-16s %4ld '", name, constantIndex);
+    ValuePrint(chunk->Constants.Values[constantIndex]);
+    printf("'\n");
+    return offset + 5;
+}
+
 /// @brief [DEBUG] Prints out an instruction from a Chunk array at the given offset.
 /// @param chunk Chunk array with instructions.
 /// @param offset Instruction offset.
@@ -42,6 +54,18 @@ int DisassembleInstruction(Chunk* chunk, int offset) {
     switch(Instruction) {
         case OP_CONSTANT:
             return ConstantInstruction("OP_CONSTANT", chunk, offset);
+        case OP_CONSTANT_LONG:
+            return ConstantLongInstruction("OP_CONSTANT_LONG", chunk, offset);
+        case OP_ADD:
+            return SimpleInstruction("OP_ADD", offset);
+        case OP_SUBTRACT:
+            return SimpleInstruction("OP_SUBTRACT", offset);
+        case OP_MULTIPLY:
+            return SimpleInstruction("OP_MULTIPLY", offset);
+        case OP_DIVIDE:
+            return SimpleInstruction("OP_DIVIDE", offset);
+        case OP_NEGATE:
+            return SimpleInstruction("OP_NEGATE", offset);
         case OP_RETURN:
             return SimpleInstruction("OP_RETURN", offset);
         default:

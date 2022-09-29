@@ -7,6 +7,11 @@
 typedef enum {
     OP_CONSTANT,        //Represents a constant value.
     OP_CONSTANT_LONG,   //Represents a long constant value.
+    OP_ADD,
+    OP_SUBTRACT,
+    OP_MULTIPLY,
+    OP_DIVIDE,
+    OP_NEGATE,          //Negates a value.
     OP_RETURN,          //Return from current function.
 } OpCode;
 
