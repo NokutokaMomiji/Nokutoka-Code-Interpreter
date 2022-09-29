@@ -14,5 +14,6 @@ void* reallocate(void* pointer, size_t oldSize, size_t newSize) {
     if (Result == NULL)
         exit(1);
 
+    //Return pointer to memory.
     return Result;
 }
