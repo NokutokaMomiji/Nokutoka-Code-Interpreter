@@ -23,7 +23,10 @@ typedef enum {
 
 void VMInit();
 void VMFree();
-InterpretResult Interpret(Chunk* chunk);
+
+InterpretResult Interpret(const char* sourceFile);
+InterpretResult InterpretChunk(Chunk* chunk);
+
 
 void Push(Value value);
 Value Pop();
