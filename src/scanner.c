@@ -11,3 +11,7 @@ typedef struct {
 } Scanner;
 
 Scanner scanner;
+
+void ScannerInit(const char* source) {
+  
+}
