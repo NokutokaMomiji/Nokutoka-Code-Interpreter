@@ -13,5 +13,7 @@ typedef struct {
 Scanner scanner;
 
 void ScannerInit(const char* source) {
-  
+  scanner.Start = source;
+  scanner.Current = source;
+  scanner.Line = 1;
 }
