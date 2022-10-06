@@ -1,6 +1,9 @@
 #ifndef NKCODE_COMPILER_H
 #define NKCODE_COMPILER_H
 
-void Compile(const char* source);
+#include "chunk.h"
+#include "vm.h"
+
+bool Compile(const char* source, Chunk* chunk);
 
 #endif

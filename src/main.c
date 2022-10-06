@@ -100,7 +100,7 @@ int main(int argc, const char* argv[]) {
     printf("Initializing VM.\n");
 
     VMInit();
-    /*
+    
     if (argc == 1)
         Repl();
     else if (argc == 2)
@@ -108,9 +108,9 @@ int main(int argc, const char* argv[]) {
     else {
         fprintf(stderr, "Usage: nkcode [path]\n");
         exit(64);
-    }*/
+    }
 
-    HandmadeTest();
+    //HandmadeTest();
 
     VMFree();
 

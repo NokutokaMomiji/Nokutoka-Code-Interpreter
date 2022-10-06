@@ -1,6 +1,67 @@
 #ifndef NKCODE_SCANNER_H
 #define NKCODE_SCANNER_H
 
+typedef enum {
+    TOKEN_PARENTHESIS_OPEN,
+    TOKEN_PARENTHESIS_CLOSE,
+    TOKEN_BRACKET_OPEN,
+    TOKEN_BRACKET_CLOSE,
+    TOKEN_SQUARE_OPEN,
+    TOKEN_SQUARE_CLOSE,
+    TOKEN_COMMA,
+    TOKEN_DOT,
+    TOKEN_SEMICOLON,
+    TOKEN_PLUS,
+    TOKEN_MINUS,
+    TOKEN_STAR,
+    TOKEN_SLASH,
+    TOKEN_ASSIGN,
+    TOKEN_EQUAL,
+    TOKEN_ADD_EQUAL,
+    TOKEN_SUB_EQUAL,
+    TOKEN_MULT_EQUAL,
+    TOKEN_DIV_EQUAL,
+    TOKEN_NOT,
+    TOKEN_NOT_EQUAL,
+    TOKEN_GREATER_THAN,
+    TOKEN_SMALLER_THAN,
+    TOKEN_GREATER_THAN_EQUAL,
+    TOKEN_SMALLER_THAN_EQUAL,
+    TOKEN_IDENTIFIER,
+    TOKEN_STRING,
+    TOKEN_NUMBER,
+
+    TOKEN_AND,
+    TOKEN_OR,
+    TOKEN_FUNCTION,
+    TOKEN_CLASS,
+    TOKEN_IF,
+    TOKEN_ELSE,
+    TOKEN_TRUE,
+    TOKEN_FALSE,
+    TOKEN_LOCAL,
+    TOKEN_GLOBAL,
+    TOKEN_STATIC,
+    TOKEN_CONST,
+    TOKEN_NULL,
+    TOKEN_FOR,
+    TOKEN_WHILE,
+    TOKEN_THIS,
+    TOKEN_RETURN,
+
+    TOKEN_ERROR,
+    TOKEN_EOF
+} TokenType;
+
+typedef struct {
+    TokenType Type;
+    const char* Start;
+    int Length;
+    int Line;
+} Token;
+
 void ScannerInit(const char* source);
+
+Token ScannerScanToken();
 
 #endif

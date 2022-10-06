@@ -63,8 +63,18 @@ static InterpretResult Run() {
 }
 
 InterpretResult Interpret(const char* source) {
-    Compile(source);
-    return INTERPRET_OK;
+    Chunk chunk;
+    ChunkInit(&chunk);
+
+    if (!Compile(source, &chunk)) {
+        ChunkFree(&chunk);
+        return INTERPRET_COMPILE_ERROR;
+    }
+
+    InterpretResult Result = InterpretChunk(&chunk);
+
+    ChunkFree(&chunk);
+    return Result;
 }
 
 InterpretResult InterpretChunk(Chunk* chunk) {
