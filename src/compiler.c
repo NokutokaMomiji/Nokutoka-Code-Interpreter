@@ -86,6 +86,14 @@ static void CompilerEmitByteLong(uint8_t byte, long longNumber) {
     CompilerEmitLong(longNumber);
 }
 
+static void CompilerEmitReturn() {
+    CompilerEmitByte(OP_RETURN);
+}
+
+static void CompilerEnd() {
+    CompilerEmitReturn();
+}   
+
 bool Compile(const char* source, Chunk* chunk) {
     ScannerInit(source);
 
