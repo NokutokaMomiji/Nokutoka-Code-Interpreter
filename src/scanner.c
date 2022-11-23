@@ -121,13 +121,14 @@ static Token ScannerScanString() {
 }
 
 static Token ScannerScanNumber() {
+  //Checks if the current character is either a digit or a underscore separator.
   while (IsDigit(ScannerPeek()))
     ScannerAdvance();
-  
+
   if (ScannerPeek() == '.' && IsDigit(ScannerPeekNext())) {
     ScannerAdvance();
 
-    while (IsDigit(ScannerPeek()))
+    while (IsDigit(ScannerPeek()) || (ScannerPeek() == "_" && IsDigit(ScannerPeekNext)))
       ScannerAdvance();
   }
 

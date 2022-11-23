@@ -11,6 +11,20 @@ typedef struct {
     bool panicMode;
 } Parser;
 
+typedef enum {
+    PREC_NONE,
+    PREC_ASSIGNMENT,  // =
+    PREC_OR,          // or
+    PREC_AND,         // and
+    PREC_EQUALITY,    // == !=
+    PREC_COMPARISON,  // < > <= >=
+    PREC_TERM,        // + -
+    PREC_FACTOR,      // * /
+    PREC_UNARY,       // ! -
+    PREC_CALL,        // . ()
+    PREC_PRIMARY
+} Precedence;
+
 Parser parser;
 Chunk* compilingChunk;
 
@@ -90,9 +104,50 @@ static void CompilerEmitReturn() {
     CompilerEmitByte(OP_RETURN);
 }
 
+static long CompilerMakeConstant(Value value) {
+    int Constant = ChunkAddConstant(CurrentChunk(), value);
+    if (Constant > LONG_MAX) {
+        Error("Too many constants in one chunk.");
+        return 0;
+    }
+    return (long)Constant;
+}
+
+static void CompilerEmitConstant(Value value) {
+    CompilerEmitByteLong(OP_CONSTANT_LONG, CompilerMakeConstant(value));
+}
+
 static void CompilerEnd() {
     CompilerEmitReturn();
 }   
+
+static void CompilerGrouping() {
+    CompilerExpression();
+    CompilerConsume(TOKEN_PARENTHESIS_CLOSE, "Expected ')' after expression.");
+}
+
+static void CompilerExpression() {
+
+}
+
+static void CompilerNumber() {
+    double Value = strtod(parser.Previous.Start, NULL);
+    CompilerEmitConstant(Value);
+}
+
+static void CompilerUnary() {
+    TokenType operatorType = parser.Previous.Type;
+
+    //Compile operand.
+    CompilerExpression();
+
+    switch(operatorType) {
+        case TOKEN_MINUS: CompilerEmitByte(OP_NEGATE); break;
+        default: return;
+    }
+}
+
+static void CompilerParsePrecedence()
 
 bool Compile(const char* source, Chunk* chunk) {
     ScannerInit(source);
