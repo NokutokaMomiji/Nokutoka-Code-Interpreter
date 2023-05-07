@@ -30,6 +30,12 @@ static void HandmadeTest() {
 
     ChunkWrite(&chunk, OP_NEGATE);
 
+    myConstant = ChunkAddConstant(&chunk, 2147483647);
+    ChunkWrite(&chunk, OP_CONSTANT);
+    ChunkWrite(&chunk, myConstant);
+
+    ChunkWrite(&chunk, OP_ADD);
+
     ChunkIncreaseLine(&chunk);
 
     //ChunkIncreaseLine(&chunk); //"Move" to next line.

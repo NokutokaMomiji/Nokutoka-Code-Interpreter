@@ -48,6 +48,8 @@ typedef enum {
     TOKEN_WHILE,
     TOKEN_THIS,
     TOKEN_RETURN,
+    TOKEN_PRINT,
+    TOKEN_SUPER,
 
     TOKEN_ERROR,
     TOKEN_EOF
