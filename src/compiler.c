@@ -4,6 +4,10 @@
 #include "compiler.h"
 #include "scanner.h"
 
+#ifdef DEBUG_PRINT_CODE
+#include "debug.h"
+#endif
+
 typedef struct {
     Token Current;
     Token Previous;
@@ -123,10 +127,15 @@ static long CompilerMakeConstant(Value value) {
 
 static void CompilerEmitConstant(Value value) {
     CompilerEmitByteLong(OP_CONSTANT_LONG, CompilerMakeConstant(value));
+    //CompilerEmitByte(CompilerMakeConstant(value))
 }
 
 static void CompilerEnd() {
     CompilerEmitReturn();
+#ifdef DEBUG_PRINT_CODE
+    if (!parser.hadError)
+        DisassembleChunk(CurrentChunk(), "code");
+#endif
 }   
 
 static void CompilerExpression();
@@ -218,7 +227,20 @@ ParseRule rules[] = {
 };
 
 static void CompilerParsePrecedence(Precedence precedence) {
+    CompilerAdvance();
+    ParseFn prefixRule = CompilerGetRule(parser.Previous.Type)->Prefix;
+    if (prefixRule == NULL) {
+        Error("Expect expression.");
+        return;
+    }
 
+    prefixRule();
+
+    while (precedence <= CompilerGetRule(parser.Current.Type)->precedence) {
+        CompilerAdvance();
+        ParseFn infixRule = CompilerGetRule(parser.Previous.Type)->Infix;
+        infixRule();
+    }
 }
 
 static ParseRule* CompilerGetRule(TokenType type) {
@@ -233,8 +255,9 @@ bool Compile(const char* source, Chunk* chunk) {
     parser.hadError = false;
     parser.panicMode = false;
 
-    ScannerAdvance();
-    ScannerExpression();
-    ScannerConsume(TOKEN_EOF, "Expected end of expression");
+    CompilerAdvance();
+    CompilerExpression();
+    CompilerConsume(TOKEN_EOF, "Expected end of expression");
+    CompilerEnd();
     return !parser.hadError;
 }

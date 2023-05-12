@@ -50,14 +50,16 @@ static void HandmadeTest() {
 static void Repl() {
     char Line[1024];
     for (;;) {
-        printf("> ");
+        printf(">>> ");
 
         if (!fgets(Line, sizeof(Line), stdin)) {
             printf("\n");
             break;
         }
 
-        Interpret(Line);
+        InterpretResult result = Interpret(Line);
+
+        printf("%d\n", result);
     }
 }
 

@@ -19,6 +19,7 @@ void VMFree() {}
 static InterpretResult Run() {
     #define READ_BYTE() (*vm.IP++)
     #define READ_CONSTANT() (vm.chunk->Constants.Values[READ_BYTE()])
+    #define READ_CONSTANT_LONG() (vm.chunk->Constants.Values[(READ_BYTE() << 24) + (READ_BYTE() << 16) + (READ_BYTE() << 8) + READ_BYTE()])
     #define BINARY_OP(op) \
         do { \
             double b = Pop(); \
@@ -41,6 +42,11 @@ static InterpretResult Run() {
         switch(Instruction = READ_BYTE()) {
             case OP_CONSTANT: {
                 Value Constant = READ_CONSTANT();
+                Push(Constant);
+                break;
+            }
+            case OP_CONSTANT_LONG: {
+                Value Constant = READ_CONSTANT_LONG();
                 Push(Constant);
                 break;
             }

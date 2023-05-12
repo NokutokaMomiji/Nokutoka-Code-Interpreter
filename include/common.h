@@ -5,4 +5,7 @@
 #include <stdbool.h>    //Includes boolean types and values.
 #include <stddef.h>     //Includes standard type definitions (and NULL).
 
+#define DEBUG_TRACE_EXECUTION
+#define DEBUG_PRINT_CODE
+
 #endif

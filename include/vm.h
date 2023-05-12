@@ -4,8 +4,6 @@
 #include "chunk.h"
 #include "value.h"
 
-#define DEBUG_TRACE_EXECUTION
-
 #define STACK_MAX 256
 
 typedef struct {

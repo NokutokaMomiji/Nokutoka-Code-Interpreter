@@ -75,6 +75,7 @@ static char ScannerPeekNext() {
 static void SkipWhitespace() {
   for (;;) {
     char currentChar = ScannerPeek();
+    char secondChar;
     switch(currentChar) {
       case ' ':
       case '\r':
@@ -82,7 +83,7 @@ static void SkipWhitespace() {
         ScannerAdvance();
         break;
       case '/':
-        char secondChar = ScannerPeekNext();
+        secondChar = ScannerPeekNext();
         if (secondChar == '/') {
           while (ScannerPeek() != '\n' && !ScannerAtEnd())
             ScannerAdvance();
