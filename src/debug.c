@@ -21,6 +21,11 @@ static int SimpleInstruction(const char* name, int offset) {
     return offset + 1;
 }
 
+/// @brief Shows value of constant (byte)
+/// @param name Name of the constant instruction (OP_CONSTANT)
+/// @param chunk Chunk that contains the constants.
+/// @param offset Offset inside progam.
+/// @return New offset (+2).
 static int ConstantInstruction(const char* name, Chunk* chunk, int offset) {
     uint8_t Constant = chunk->Code[offset + 1]; //Grab constant index from chunk.
     printf("%-16s %4d '", name, Constant);
@@ -38,7 +43,7 @@ static int ConstantLongInstruction(const char* name, Chunk* chunk, int offset) {
     printf("%-16s %4ld '", name, constantIndex);
     ValuePrint(chunk->Constants.Values[constantIndex]);
     printf("'\n");
-    return offset + 5;
+    return offset + 5;  // We skip over the Constant Operation Code + the 4 bytes that make up the long index.
 }
 
 /// @brief [DEBUG] Prints out an instruction from a Chunk array at the given offset.
@@ -56,6 +61,14 @@ int DisassembleInstruction(Chunk* chunk, int offset) {
             return ConstantInstruction("OP_CONSTANT", chunk, offset);
         case OP_CONSTANT_LONG:
             return ConstantLongInstruction("OP_CONSTANT_LONG", chunk, offset);
+        case OP_NULL:
+            return SimpleInstruction("OP_NULL", offset);
+        case OP_TRUE:
+            return SimpleInstruction("OP_TRUE", offset);
+        case OP_FALSE:
+            return SimpleInstruction("OP_FALSE", offset);
+        case OP_MAYBE:
+            return SimpleInstruction("OP_MAYBE", offset);
         case OP_ADD:
             return SimpleInstruction("OP_ADD", offset);
         case OP_SUBTRACT:
@@ -68,6 +81,8 @@ int DisassembleInstruction(Chunk* chunk, int offset) {
             return SimpleInstruction("OP_NEGATE", offset);
         case OP_RETURN:
             return SimpleInstruction("OP_RETURN", offset);
+        case OP_NOT:
+            return SimpleInstruction("OP_NOT", offset);
         default:
             printf("Unknown Operation Code %d\n", Instruction);
             return offset + 1;

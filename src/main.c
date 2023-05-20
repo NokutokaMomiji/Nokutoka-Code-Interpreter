@@ -6,47 +6,6 @@
 #include "debug.h"
 #include "vm.h"
 
-static void HandmadeTest() {
-    Chunk chunk;
-    
-    ChunkInit(&chunk);
-    ChunkIncreaseLine(&chunk);
-
-    int myConstant = ChunkAddConstant(&chunk, 1.2); //Add a constant to the value array inside the chunk.
-    ChunkWrite(&chunk, OP_CONSTANT); //Add a constant instruction.
-    ChunkWrite(&chunk, myConstant); //Write the constant index.
-
-    myConstant = ChunkAddConstant(&chunk, 3.4);
-    ChunkWrite(&chunk, OP_CONSTANT);
-    ChunkWrite(&chunk, myConstant);
-
-    ChunkWrite(&chunk, OP_ADD);
-
-    myConstant = ChunkAddConstant(&chunk, 5.6);
-    ChunkWrite(&chunk, OP_CONSTANT);
-    ChunkWrite(&chunk, myConstant);
-
-    ChunkWrite(&chunk, OP_DIVIDE);
-
-    ChunkWrite(&chunk, OP_NEGATE);
-
-    myConstant = ChunkAddConstant(&chunk, 2147483647);
-    ChunkWrite(&chunk, OP_CONSTANT);
-    ChunkWrite(&chunk, myConstant);
-
-    ChunkWrite(&chunk, OP_ADD);
-
-    ChunkIncreaseLine(&chunk);
-
-    //ChunkIncreaseLine(&chunk); //"Move" to next line.
-
-    ChunkWrite(&chunk, OP_RETURN); 
-    
-    DisassembleChunk(&chunk, "test program");
-    InterpretChunk(&chunk);
-    ChunkFree(&chunk);
-}
-
 static void Repl() {
     char Line[1024];
     for (;;) {

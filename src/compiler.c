@@ -55,7 +55,7 @@ static void ErrorAt(Token* token, const char* msg) {
     if (token->Type == TOKEN_EOF)
         fprintf(stderr, " at end.");
     else if (token->Type != TOKEN_ERROR)
-        fprintf(stderr, " at line: %d | pos: %.*s.", token->Line, token->Length, token->Start);
+        fprintf(stderr, " at line: %d | pos: '%.*s.'.", token->Line, token->Length, token->Start);
 
     fprintf(stderr, "\n");
     parser.hadError = true;
@@ -156,6 +156,16 @@ static void CompilerBinary() {
     }
 }
 
+static void CompilerLiteral() {
+    switch(parser.Previous.Type) {
+        case TOKEN_FALSE:   CompilerEmitByte(OP_TRUE);  break;
+        case TOKEN_TRUE:    CompilerEmitByte(OP_FALSE); break;
+        case TOKEN_NULL:    CompilerEmitByte(OP_NULL);  break;
+        case TOKEN_MAYBE:   CompilerEmitByte(OP_MAYBE); break;
+        default: return; //Unreachable.
+    }
+}
+
 static void CompilerExpression() {
     CompilerParsePrecedence(PREC_ASSIGNMENT);
 }
@@ -166,8 +176,8 @@ static void CompilerGrouping() {
 }
 
 static void CompilerNumber() {
-    double Value = strtod(parser.Previous.Start, NULL);
-    CompilerEmitConstant(Value);
+    double value = strtod(parser.Previous.Start, NULL);
+    CompilerEmitConstant(NUMBER_VALUE(value));
 }
 
 static void CompilerUnary() {
@@ -177,7 +187,8 @@ static void CompilerUnary() {
     CompilerParsePrecedence(PREC_UNARY);
 
     switch(operatorType) {
-        case TOKEN_MINUS: CompilerEmitByte(OP_NEGATE); break;
+        case TOKEN_MINUS:   CompilerEmitByte(OP_NEGATE);  break;
+        case TOKEN_NOT:     CompilerEmitByte(OP_NOT);     break;
         default: return;
     }
 }
@@ -195,7 +206,7 @@ ParseRule rules[] = {
   [TOKEN_SEMICOLON]           = {NULL,             NULL,           PREC_NONE},
   [TOKEN_SLASH]               = {NULL,             CompilerBinary, PREC_FACTOR},
   [TOKEN_STAR]                = {NULL,             CompilerBinary, PREC_FACTOR},
-  [TOKEN_NOT]                 = {NULL,             NULL,           PREC_NONE},
+  [TOKEN_NOT]                 = {CompilerUnary,    NULL,           PREC_NONE},
   [TOKEN_NOT_EQUAL]           = {NULL,             NULL,           PREC_NONE},
   [TOKEN_ASSIGN]              = {NULL,             NULL,           PREC_NONE},
   [TOKEN_EQUAL]               = {NULL,             NULL,           PREC_NONE},
@@ -209,17 +220,18 @@ ParseRule rules[] = {
   [TOKEN_AND]                 = {NULL,             NULL,           PREC_NONE},
   [TOKEN_CLASS]               = {NULL,             NULL,           PREC_NONE},
   [TOKEN_ELSE]                = {NULL,             NULL,           PREC_NONE},
-  [TOKEN_FALSE]               = {NULL,             NULL,           PREC_NONE},
+  [TOKEN_FALSE]               = {CompilerLiteral,  NULL,           PREC_NONE},
   [TOKEN_FOR]                 = {NULL,             NULL,           PREC_NONE},
   [TOKEN_FUNCTION]            = {NULL,             NULL,           PREC_NONE},
   [TOKEN_IF]                  = {NULL,             NULL,           PREC_NONE},
-  [TOKEN_NULL]                = {NULL,             NULL,           PREC_NONE},
+  [TOKEN_NULL]                = {CompilerLiteral,  NULL,           PREC_NONE},
   [TOKEN_OR]                  = {NULL,             NULL,           PREC_NONE},
   [TOKEN_PRINT]               = {NULL,             NULL,           PREC_NONE},
   [TOKEN_RETURN]              = {NULL,             NULL,           PREC_NONE},
   [TOKEN_SUPER]               = {NULL,             NULL,           PREC_NONE},
   [TOKEN_THIS]                = {NULL,             NULL,           PREC_NONE},
-  [TOKEN_TRUE]                = {NULL,             NULL,           PREC_NONE},
+  [TOKEN_TRUE]                = {CompilerLiteral,  NULL,           PREC_NONE},
+  [TOKEN_MAYBE]               = {CompilerLiteral,  NULL,           PREC_NONE},
   [TOKEN_LOCAL]               = {NULL,             NULL,           PREC_NONE},
   [TOKEN_WHILE]               = {NULL,             NULL,           PREC_NONE},
   [TOKEN_ERROR]               = {NULL,             NULL,           PREC_NONE},
@@ -230,7 +242,7 @@ static void CompilerParsePrecedence(Precedence precedence) {
     CompilerAdvance();
     ParseFn prefixRule = CompilerGetRule(parser.Previous.Type)->Prefix;
     if (prefixRule == NULL) {
-        Error("Expect expression.");
+        Error("Expected expression");
         return;
     }
 

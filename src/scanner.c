@@ -165,6 +165,7 @@ static TokenType IdentifierType() {
     case 'g': return CheckKeyword(1, "lobal", TOKEN_GLOBAL);
     case 'i': return CheckKeyword(1, "f", TOKEN_IF);
     case 'l': return CheckKeyword(1, "ocal", TOKEN_LOCAL);
+    case 'm': return CheckKeyword(1, "aybe", TOKEN_MAYBE);
     case 'n': return CheckKeyword(1, "ull", TOKEN_NULL);
     case 'o': return CheckKeyword(1, "r", TOKEN_OR);
     case 'r': return CheckKeyword(1, "eturn", TOKEN_RETURN);

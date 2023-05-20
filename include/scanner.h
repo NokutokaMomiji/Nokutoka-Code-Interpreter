@@ -39,6 +39,7 @@ typedef enum {
     TOKEN_ELSE,
     TOKEN_TRUE,
     TOKEN_FALSE,
+    TOKEN_MAYBE,
     TOKEN_LOCAL,
     TOKEN_GLOBAL,
     TOKEN_STATIC,

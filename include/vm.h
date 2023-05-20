@@ -28,5 +28,6 @@ InterpretResult InterpretChunk(Chunk* chunk);
 
 void Push(Value value);
 Value Pop();
+static Value Peek(int distance);
 
 #endif
