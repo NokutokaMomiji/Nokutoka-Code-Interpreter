@@ -3,6 +3,7 @@
 
 #include "chunk.h"
 #include "vm.h"
+#include "object.h"
 
 bool Compile(const char* source, Chunk* chunk);
 

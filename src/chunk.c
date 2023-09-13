@@ -33,6 +33,13 @@ void ChunkWrite(Chunk* chunk, uint8_t byte) {
     chunk->Code[chunk->Count] = byte;
     chunk->Count++;
 
+    // This is merely to make sure that the Lines pointer actually points to valid memory.
+    if (chunk->lineCapacity < chunk->currentLine + 1) {
+        int oldCapacity = chunk->lineCapacity;
+        chunk->lineCapacity = GROW_CAPACITY(oldCapacity);
+        chunk->Lines = GROW_ARRAY(int, chunk->Lines, oldCapacity, chunk->lineCapacity);
+    }
+
     //Increase number of elements in current line.
     chunk->Lines[chunk->currentLine]++;
 }

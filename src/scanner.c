@@ -157,13 +157,20 @@ static TokenType IdentifierType() {
     case 'f': 
       if (scanner.Current - scanner.Start > 1) {
         switch(scanner.Start[1]) {
-          case 'a': return CheckKeyword(2, "alse", TOKEN_FALSE);
+          case 'a': return CheckKeyword(2, "lse", TOKEN_FALSE);
           case 'o': return CheckKeyword(2, "r", TOKEN_FOR);
           case 'u': return CheckKeyword(2, "nction", TOKEN_FUNCTION);
         }
       }
     case 'g': return CheckKeyword(1, "lobal", TOKEN_GLOBAL);
-    case 'i': return CheckKeyword(1, "f", TOKEN_IF);
+    case 'i': {
+      if (scanner.Current - scanner.Start > 1) {
+        switch(scanner.Start[1]) {
+          case 'f': return CheckKeyword(2, "f", TOKEN_IF);
+          case 's': return CheckKeyword(2, "s", TOKEN_IS);
+        }
+      }
+    }
     case 'l': return CheckKeyword(1, "ocal", TOKEN_LOCAL);
     case 'm': return CheckKeyword(1, "aybe", TOKEN_MAYBE);
     case 'n': return CheckKeyword(1, "ull", TOKEN_NULL);
@@ -174,7 +181,7 @@ static TokenType IdentifierType() {
       if (scanner.Current - scanner.Start > 1) {
         switch(scanner.Start[1]) {
           case 'h': return CheckKeyword(2, "is", TOKEN_THIS);
-          case 'r': return CheckKeyword(2, "ue", TOKEN_CONST);
+          case 'r': return CheckKeyword(2, "ue", TOKEN_TRUE);
         }
       }
     case 'w': return CheckKeyword(1, "hile", TOKEN_WHILE);
@@ -231,9 +238,9 @@ Token ScannerScanToken() {
     case '=':
       return TokenMake(ScannerMatch('=') ? TOKEN_EQUAL : TOKEN_ASSIGN);
     case '>':
-      return TokenMake(ScannerMatch('=') ? TOKEN_GREATER_THAN_EQUAL : TOKEN_GREATER_THAN);
+      return TokenMake(ScannerMatch('=') ? TOKEN_GREATER_EQ : TOKEN_GREATER);
     case '<':
-      return TokenMake(ScannerMatch('=') ? TOKEN_SMALLER_THAN_EQUAL : TOKEN_SMALLER_THAN);
+      return TokenMake(ScannerMatch('=') ? TOKEN_SMALLER_EQ : TOKEN_SMALLER);
     case '"': return ScannerScanString();
   }
 

@@ -11,6 +11,7 @@ typedef struct {
     uint8_t* IP;
     Value Stack[STACK_MAX];
     Value* stackTop;
+    Object* Objects;
 } VM;
 
 typedef enum {
@@ -18,6 +19,8 @@ typedef enum {
     INTERPRET_COMPILE_ERROR,
     INTERPRET_RUNTIME_ERROR
 } InterpretResult;
+
+extern VM vm;
 
 void VMInit();
 void VMFree();
@@ -29,5 +32,7 @@ InterpretResult InterpretChunk(Chunk* chunk);
 void Push(Value value);
 Value Pop();
 static Value Peek(int distance);
+static bool IsFalsey(Value Value);
+static void Concatenate();
 
 #endif

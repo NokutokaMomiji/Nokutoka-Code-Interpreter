@@ -50,7 +50,7 @@ static void ErrorAt(Token* token, const char* msg) {
 
     parser.panicMode = true;
 
-    fprintf(stderr, "[ERROR]: %s ", msg);
+    fprintf(stderr, "[ERROR]: %s", msg);
 
     if (token->Type == TOKEN_EOF)
         fprintf(stderr, " at end.");
@@ -148,18 +148,25 @@ static void CompilerBinary() {
     CompilerParsePrecedence((Precedence)(Rule->precedence + 1));
     
     switch(operatorType) {
-        case TOKEN_PLUS:    CompilerEmitByte(OP_ADD);       break;
-        case TOKEN_MINUS:   CompilerEmitByte(OP_SUBTRACT);  break;
-        case TOKEN_STAR:    CompilerEmitByte(OP_MULTIPLY);  break;
-        case TOKEN_SLASH:   CompilerEmitByte(OP_DIVIDE);    break;
+        case TOKEN_PLUS:        CompilerEmitByte(OP_ADD);           break;
+        case TOKEN_MINUS:       CompilerEmitByte(OP_SUBTRACT);      break;
+        case TOKEN_STAR:        CompilerEmitByte(OP_MULTIPLY);      break;
+        case TOKEN_SLASH:       CompilerEmitByte(OP_DIVIDE);        break;
+        case TOKEN_EQUAL:       CompilerEmitByte(OP_EQUAL);         break;
+        case TOKEN_NOT_EQUAL:   CompilerEmitByte(OP_NOT_EQUAL);     break;
+        case TOKEN_GREATER:     CompilerEmitByte(OP_GREATER);       break;
+        case TOKEN_GREATER_EQ:  CompilerEmitByte(OP_GREATER_EQ);    break;
+        case TOKEN_SMALLER:     CompilerEmitByte(OP_SMALLER);       break;
+        case TOKEN_SMALLER_EQ:  CompilerEmitByte(OP_SMALLER_EQ);    break;
+        case TOKEN_IS:          CompilerEmitByte(OP_IS);            break;
         default: return;
     }
 }
 
 static void CompilerLiteral() {
     switch(parser.Previous.Type) {
-        case TOKEN_FALSE:   CompilerEmitByte(OP_TRUE);  break;
-        case TOKEN_TRUE:    CompilerEmitByte(OP_FALSE); break;
+        case TOKEN_TRUE:    CompilerEmitByte(OP_TRUE);  break;
+        case TOKEN_FALSE:   CompilerEmitByte(OP_FALSE); break;
         case TOKEN_NULL:    CompilerEmitByte(OP_NULL);  break;
         case TOKEN_MAYBE:   CompilerEmitByte(OP_MAYBE); break;
         default: return; //Unreachable.
@@ -178,6 +185,10 @@ static void CompilerGrouping() {
 static void CompilerNumber() {
     double value = strtod(parser.Previous.Start, NULL);
     CompilerEmitConstant(NUMBER_VALUE(value));
+}
+
+static void CompilerString() {
+    CompilerEmitConstant(OBJECT_VALUE(StringCopy(parser.Previous.Start + 1, parser.Previous.Length - 2)));
 }
 
 static void CompilerUnary() {
@@ -207,15 +218,16 @@ ParseRule rules[] = {
   [TOKEN_SLASH]               = {NULL,             CompilerBinary, PREC_FACTOR},
   [TOKEN_STAR]                = {NULL,             CompilerBinary, PREC_FACTOR},
   [TOKEN_NOT]                 = {CompilerUnary,    NULL,           PREC_NONE},
-  [TOKEN_NOT_EQUAL]           = {NULL,             NULL,           PREC_NONE},
+  [TOKEN_NOT_EQUAL]           = {NULL,             CompilerBinary, PREC_EQUALITY},
   [TOKEN_ASSIGN]              = {NULL,             NULL,           PREC_NONE},
-  [TOKEN_EQUAL]               = {NULL,             NULL,           PREC_NONE},
-  [TOKEN_GREATER_THAN]        = {NULL,             NULL,           PREC_NONE},
-  [TOKEN_GREATER_THAN_EQUAL]  = {NULL,             NULL,           PREC_NONE},
-  [TOKEN_SMALLER_THAN]        = {NULL,             NULL,           PREC_NONE},
-  [TOKEN_SMALLER_THAN_EQUAL]  = {NULL,             NULL,           PREC_NONE},
+  [TOKEN_EQUAL]               = {NULL,             CompilerBinary, PREC_EQUALITY},
+  [TOKEN_GREATER]             = {NULL,             CompilerBinary, PREC_COMPARISON},
+  [TOKEN_GREATER_EQ]          = {NULL,             CompilerBinary, PREC_COMPARISON},
+  [TOKEN_SMALLER]             = {NULL,             CompilerBinary, PREC_COMPARISON},
+  [TOKEN_SMALLER_EQ]          = {NULL,             CompilerBinary, PREC_COMPARISON},
+  [TOKEN_IS]                  = {NULL,             CompilerBinary, PREC_COMPARISON},
   [TOKEN_IDENTIFIER]          = {NULL,             NULL,           PREC_NONE},
-  [TOKEN_STRING]              = {NULL,             NULL,           PREC_NONE},
+  [TOKEN_STRING]              = {CompilerString,   NULL,           PREC_NONE},
   [TOKEN_NUMBER]              = {CompilerNumber,   NULL,           PREC_NONE},
   [TOKEN_AND]                 = {NULL,             NULL,           PREC_NONE},
   [TOKEN_CLASS]               = {NULL,             NULL,           PREC_NONE},
@@ -241,8 +253,9 @@ ParseRule rules[] = {
 static void CompilerParsePrecedence(Precedence precedence) {
     CompilerAdvance();
     ParseFn prefixRule = CompilerGetRule(parser.Previous.Type)->Prefix;
+
     if (prefixRule == NULL) {
-        Error("Expected expression");
+        Error("Expected expression.");
         return;
     }
 
