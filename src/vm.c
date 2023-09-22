@@ -29,12 +29,14 @@ static void RuntimeError(const char* format, ...) {
         size_t instruction = frame->IP - function->chunk.Code - 1;
 
         int line = ChunkGetLine(&function->chunk, instruction);
+        char* content = ChunkGetSource(&function->chunk, instruction);
 
         fprintf(stderr, "   %4d | ", line);
         if (function->Name == NULL)
-            fprintf(stderr, "<script>\n");
+            fprintf(stderr, "<script>");
         else
-            fprintf(stderr, "%s()\n", function->Name->Chars);
+            fprintf(stderr, "%s()", function->Name->Chars);
+        fprintf(stderr, " | %s\n", content);
     }
 
     va_list args;
@@ -44,12 +46,42 @@ static void RuntimeError(const char* format, ...) {
     va_end(args);
     fputs("\n", stderr);
 
+    ObjFunction* Function = Frame->Function;
+    size_t instruction = Frame->IP - Function->chunk.Code - 1;
+    int line = ChunkGetLine(&Function->chunk, instruction);
+    char* content = ChunkGetSource(&Function->chunk, instruction);
+
     if (Frame->Function->Name == NULL)
         fprintf(stderr, "In <script>: \n");
     else
         fprintf(stderr, "In <%s()>: \n", Frame->Function->Name->Chars);
-
+    
+    fprintf(stderr, "   %4d | %s\n", line, content);
     ResetStack();
+}
+
+static void DefineNative(const char* name, NativeFn function) {
+    Push(OBJECT_VALUE(StringCopy(name, (int)strlen(name))));
+    Push(OBJECT_VALUE(NativeNew(function)));
+    TableSet(&vm.Globals, AS_STRING(vm.Stack[0]), vm.Stack[1]);
+    PopN(2);
+}
+
+static Value InputNative(int argumentCount, Value* arguments) {
+    if (argumentCount > 0)
+        printf(AS_CSTRING(arguments[0]));
+    
+    char input[2048];
+
+    fgets(input, sizeof(input), stdin);
+
+    input[strcspn(input, "\n")] = 0;
+
+    return OBJECT_VALUE(StringCopy(input, 2048));
+}
+
+static Value ClockNative(int argumentCount, Value* arguments) {
+    return NUMBER_VALUE((double)clock() / CLOCKS_PER_SEC);
 }
 
 void VMInit() {
@@ -58,6 +90,9 @@ void VMInit() {
     vm.Objects = NULL;
     TableInit(&vm.Strings);
     TableInit(&vm.Globals);
+
+    DefineNative("clock", ClockNative);
+    DefineNative("input", InputNative);
 }
 void VMFree() {
     TableFree(&vm.Strings);
@@ -307,7 +342,17 @@ static InterpretResult Run() {
                 break;
             }
             case OP_RETURN: {
-                return INTERPRET_OK;
+                Value Result = Pop();
+                vm.frameCount--;
+                if (vm.frameCount == 0) {
+                    Pop();
+                    return INTERPRET_OK;
+                }
+
+                vm.stackTop = Frame->Slots;
+                Push(Result);
+                Frame = &vm.Frames[vm.frameCount - 1];
+                break;
             }
         }
     }
@@ -326,7 +371,7 @@ InterpretResult Interpret(const char* source) {
         return INTERPRET_COMPILE_ERROR;
     
     Push(OBJECT_VALUE(Function));
-    CallFrame* Frame = &vm.Frames[vm.frameCount++];
+    CallFrame* Frame = &vm.Frames[vm.frameCount];
     Frame->Function = Function;
     Frame->IP = Function->chunk.Code;
     Frame->Slots = vm.Stack;
@@ -346,21 +391,44 @@ Value Pop() {
     return *vm.stackTop;
 }
 
+Value PopN(int n) {
+    vm.stackTop -= n;
+    return *vm.stackTop;
+}
+
 static Value Peek(int distance) {
     return vm.stackTop[-1 - distance];
 }
 
 static bool Call(ObjFunction* function, int argumentCount) {
+    if (argumentCount != function->Arity) {
+        RuntimeError("Expected %d arguments but got %d instead.", function->Arity, argumentCount);
+        return false;
+    }
+
+    if (vm.frameCount == FRAMES_MAX) {
+        RuntimeError("Stack Overflow. Limit is %d.", FRAMES_MAX);
+        return false;
+    }
+
     CallFrame* Frame = &vm.Frames[vm.frameCount++];
     Frame->Function = function;
     Frame->IP = function->chunk.Code;
     Frame->Slots = vm.stackTop - argumentCount - 1;
+
     return true;
 }
 
 static bool CallValue(Value callee, int argumentCount) {
     if (IS_OBJECT(callee)) {
         switch (OBJECT_TYPE(callee)) {
+            case OBJ_NATIVE: {
+                NativeFn Native = AS_NATIVE(callee);
+                Value Result = Native(argumentCount, vm.stackTop - argumentCount);
+                vm.stackTop -= argumentCount + 1;
+                Push(Result);
+                return true;
+            }
             case OBJ_FUNCTION:
                 return Call(AS_FUNCTION(callee), argumentCount);
             default:

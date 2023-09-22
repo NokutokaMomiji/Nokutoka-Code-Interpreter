@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <stdio.h>
 
 #include "memory.h"
 #include "vm.h"
@@ -28,6 +29,9 @@ static void FreeObject(Object* object) {
             FREE(ObjString, object);
             break;
         }
+        case OBJ_NATIVE:
+            FREE(ObjNative, object);
+            break;
         case OBJ_FUNCTION: {
             ObjFunction* function = (ObjFunction*)object;
             ChunkFree(&function->chunk);

@@ -60,11 +60,12 @@ typedef struct {
 } Chunk;
 
 void ChunkInit(Chunk* chunk);                               //Initializes a chunk.
-void ChunkWrite(Chunk* chunk, uint8_t byte, int line);      //Writes an instruction byte to a chunk array.
-void ChunkWriteLong(Chunk* chunk, long number, int line);
+void ChunkWrite(Chunk* chunk, uint8_t byte, int line, char* source);      //Writes an instruction byte to a chunk array.
+void ChunkWriteLong(Chunk* chunk, long number, int line, char* source);
 int ChunkAddConstant(Chunk* chunk, Value value);            //Writes a constant to the constant array inside a chunk.
 int ChunkWriteConstant(Chunk* chunk, Value value);
 int ChunkGetLine(Chunk* chunk, int instruction);
+char* ChunkGetSource(Chunk* chunk, int instruction);
 void ChunkFree(Chunk* chunk);
 
 #endif

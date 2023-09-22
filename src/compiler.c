@@ -72,13 +72,13 @@ static void ErrorAt(Token* token, const char* msg) {
 
     parser.panicMode = true;
 
-    fprintf(stderr, "[ERROR]: %s", msg);
+    fprintf(stderr, "SyntaxError: %s", msg);
 
     if (token->Type == TOKEN_EOF)
         fprintf(stderr, " at end.");
-    else if (token->Type != TOKEN_ERROR)
-        fprintf(stderr, " at line: %d | '%.*s'.", token->Line, token->Length, token->Start);
-
+    else if (token->Type != TOKEN_ERROR) {
+        fprintf(stderr, " at line %d | '%.*s'.", token->Line, token->Length, token->Start);
+    }
     fprintf(stderr, "\n");
     parser.hadError = true;
 }
@@ -126,7 +126,7 @@ static bool Match(TokenType type) {
 }
 
 static void CompilerEmitByte(uint8_t byte) {
-    ChunkWrite(CurrentChunk(), byte, parser.Previous.Line);
+    ChunkWrite(CurrentChunk(), byte, parser.Previous.Line, ScannerGetSource());
 }
 
 static void CompilerEmitBytes(uint8_t firstByte, uint8_t secondByte) {
@@ -135,7 +135,7 @@ static void CompilerEmitBytes(uint8_t firstByte, uint8_t secondByte) {
 }
 
 static void CompilerEmitLong(long longNumber) {
-    ChunkWriteLong(CurrentChunk(), longNumber, parser.Previous.Line);
+    ChunkWriteLong(CurrentChunk(), longNumber, parser.Previous.Line, ScannerGetSource());
 }
 
 static void CompilerEmitByteLong(uint8_t byte, long longNumber) {
@@ -162,6 +162,7 @@ static int CompilerEmitLoop(int loopStart) {
 }
 
 static void CompilerEmitReturn() {
+    CompilerEmitByte(OP_NULL);
     CompilerEmitByte(OP_RETURN);
 }
 
@@ -623,6 +624,20 @@ static void StatementPrint() {
     CompilerEmitByte(OP_PRINT);
 }
 
+static void StatementReturn() {
+    if (Current->Type == TYPE_SCRIPT) {
+        Error("Cannot return from outside a function");
+    }
+
+    if (Match(TOKEN_SEMICOLON))
+        CompilerEmitReturn();
+    else {
+        CompilerExpression();
+        CompilerConsume(TOKEN_SEMICOLON, "Expected ';' after return value.");
+        CompilerEmitByte(OP_RETURN);
+    }
+}
+
 static void StatementWhile() {
     int loopStart = CurrentChunk()->Count;
 
@@ -685,6 +700,9 @@ static void CompilerStatement() {
     }
     else if (Match(TOKEN_IF)) {
         StatementIf();
+    }
+    else if (Match(TOKEN_RETURN)) {
+        StatementReturn();
     }
     else if (Match(TOKEN_WHILE)) {
         StatementWhile();

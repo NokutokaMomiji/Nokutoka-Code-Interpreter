@@ -1,6 +1,8 @@
 #ifndef NKCODE_SCANNER_H
 #define NKCODE_SCANNER_H
 
+#include "chunk.h"
+
 typedef enum {
     TOKEN_PARENTHESIS_OPEN,
     TOKEN_PARENTHESIS_CLOSE,
@@ -76,6 +78,7 @@ typedef struct {
 
 void ScannerInit(const char* source);
 
+char* ScannerGetSource();
 Token ScannerScanToken();
 
 #endif

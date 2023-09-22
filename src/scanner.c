@@ -4,11 +4,14 @@
 #include "common.h"
 #include "scanner.h"
 #include "utilities.h"
+#include "memory.h"
 
 typedef struct {
   const char* Start;
   const char* Current;
   int Line;
+  int previousLine;
+  char* Source;
 } Scanner;
 
 Scanner scanner;
@@ -18,6 +21,8 @@ void ScannerInit(const char* source) {
   scanner.Start = source;
   scanner.Current = source;
   scanner.Line = 1;
+  scanner.previousLine = 0;
+  scanner.Source = NULL;
 }
 
 static bool ScannerAtEnd() {
@@ -222,7 +227,43 @@ static Token ScannerScanIdentifier() {
   return TokenMake(IdentifierType());
 }
 
+static int ScannerGetLineLength() {
+  char* p = &scanner.Start[0];
+  int l = 0;
+  while (*p != '\0' && *p != '\n') {
+    l++;
+    p++;
+  }
+  return l - 1;
+}
+
+static void ScannerSetSource() {
+  int Length = ScannerGetLineLength();
+
+  if (Length <= 0)
+    return;
+
+  if (scanner.Source != NULL)
+    FREE(char, scanner.Source);
+
+  scanner.Source = ALLOCATE(char, Length + 1);
+  memcpy(scanner.Source, scanner.Start, Length);
+  scanner.Source[Length] = '\0';
+}
+
+char* ScannerGetSource() {
+  if (scanner.Source == NULL)
+    ScannerSetSource();
+
+  return scanner.Source;
+}
+
 Token ScannerScanToken() {
+  if (scanner.previousLine != scanner.Line) {
+    ScannerSetSource();
+    scanner.previousLine = scanner.Line;
+  }
+
   SkipWhitespace();
   scanner.Start = scanner.Current;
 

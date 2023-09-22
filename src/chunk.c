@@ -1,3 +1,4 @@
+#include <string.h>
 #include "chunk.h"
 #include "memory.h"
 
@@ -21,7 +22,7 @@ void ChunkInit(Chunk* chunk) {
 /// @brief Writes a byte to a Chunk array.
 /// @param chunk Chunk to write the byte to.
 /// @param byte Byte to store on Chunk.
-void ChunkWrite(Chunk* chunk, uint8_t byte, int line) {
+void ChunkWrite(Chunk* chunk, uint8_t byte, int line, char* source) {
     //If there is not enough capacity for the new byte, then increase the size of the array.
     if (chunk->Capacity < chunk->Count + 1) {
         int oldCapacity = chunk->Capacity;
@@ -45,18 +46,23 @@ void ChunkWrite(Chunk* chunk, uint8_t byte, int line) {
     LineStart* lineStart = &chunk->Lines[chunk->lineCount++];
     lineStart->Offset = chunk->Count - 1;
     lineStart->Line = line;
+    
+    int contentLength = strlen(source);
+    lineStart->Content = ALLOCATE(char, contentLength + 1);
+    memcpy(lineStart->Content, source, contentLength);
+    lineStart->Content[contentLength] = '\0';
 }
 
-void ChunkWriteLong(Chunk* chunk, long number, int line) {
+void ChunkWriteLong(Chunk* chunk, long number, int line, char* source) {
     uint8_t firstByte = (number & 0xff000000UL) >> 24;
     uint8_t secondByte = (number & 0x00ff0000UL) >> 16;
     uint8_t thirdByte = (number & 0x0000ff00UL) >> 8;
     uint8_t fourthByte = (number & 0x000000ffUL);
 
-    ChunkWrite(chunk, firstByte, line);
-    ChunkWrite(chunk, secondByte, line);
-    ChunkWrite(chunk, thirdByte, line);
-    ChunkWrite(chunk, fourthByte, line);
+    ChunkWrite(chunk, firstByte, line, source);
+    ChunkWrite(chunk, secondByte, line, source);
+    ChunkWrite(chunk, thirdByte, line, source);
+    ChunkWrite(chunk, fourthByte, line, source);
 }
 
 int ChunkAddConstant(Chunk* chunk, Value value) {
@@ -69,12 +75,28 @@ int ChunkGetLine(Chunk* chunk, int instruction) {
     int End = chunk->lineCount - 1;
 
     for (;;) {
-        int Mid = (Start + End) / 2;
+        int Mid = (Start + End) / 2;    
         LineStart* Line = &chunk->Lines[Mid];
         if (instruction < Line->Offset)
             End = Mid - 1;
         else if (Mid == chunk->lineCount - 1 || instruction < chunk->Lines[Mid + 1].Offset)
             return Line->Line;
+        else
+            Start = Mid + 1;
+    }
+}
+
+char* ChunkGetSource(Chunk* chunk, int instruction) {
+    int Start = 0;
+    int End = chunk->lineCount - 1;
+
+    for (;;) {
+        int Mid = (Start + End) / 2;    
+        LineStart* Line = &chunk->Lines[Mid];
+        if (instruction < Line->Offset)
+            End = Mid - 1;
+        else if (Mid == chunk->lineCount - 1 || instruction < chunk->Lines[Mid + 1].Offset)
+            return Line->Content;
         else
             Start = Mid + 1;
     }

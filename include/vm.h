@@ -6,7 +6,7 @@
 #include "value.h"
 #include "table.h"
 
-#define FRAMES_MAX 64
+#define FRAMES_MAX 1000
 #define STACK_MAX (FRAMES_MAX * UINT8_COUNT)
 
 typedef struct {
@@ -43,6 +43,7 @@ InterpretResult InterpretChunk(Chunk* chunk);
 
 void Push(Value value);
 Value Pop();
+Value PopN(int n);
 static Value Peek(int distance);
 static bool CallValue(Value callee, int argumentCount);
 static bool Call(ObjFunction* function, int argumentCount);

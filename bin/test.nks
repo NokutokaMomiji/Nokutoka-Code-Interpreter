@@ -1,13 +1,8 @@
-function c() {
-    aaaaaaaaaaaaa;
+function fib(n) {
+  if (n < 2) return n;
+  return fib(n - 2) + fib(n - 1);
 }
 
-function b() {
-    c();
-}
-
-function a() {
-    b();
-}
-
-a();
+var start = clock();
+print(fib(10));
+print(clock() - start);
