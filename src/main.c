@@ -17,8 +17,6 @@ static void Repl() {
         }
 
         InterpretResult result = Interpret(Line);
-
-        printf("%d\n", result);
     }
 }
 
@@ -65,7 +63,6 @@ static void RunFile(const char* path) {
 
 int main(int argc, const char* argv[]) {
     printf("Initializing VM.\n");
-
     VMInit();
     
     if (argc == 1)
@@ -73,7 +70,7 @@ int main(int argc, const char* argv[]) {
     else if (argc == 2)
         RunFile(argv[1]);
     else {
-        fprintf(stderr, "Usage: nkcode [path]\n");
+        fprintf(stderr, "Usage: momiji [path]\n");
         exit(64);
     }
 

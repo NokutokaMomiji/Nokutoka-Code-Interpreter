@@ -145,14 +145,34 @@ static TokenType CheckKeyword(int start, const char* rest, TokenType type) {
 
 static TokenType IdentifierType() {
   switch (scanner.Start[0]) {
-    case 'a': return CheckKeyword(1, "nd", TOKEN_AND);
+    case 'a': 
+      if (scanner.Current - scanner.Start > 1) {
+        switch(scanner.Start[1]) {
+          case 'n': return CheckKeyword(2, "d", TOKEN_AND);
+          case 's': return TOKEN_AS;
+          case 'f': return CheckKeyword(2, "ter", TOKEN_AFTER);
+        }
+      }
+    case 'b': return CheckKeyword(1, "reak", TOKEN_BREAK);
     case 'c':
       if (scanner.Current - scanner.Start > 1) {
         switch(scanner.Start[1]) {
           case 'l': return CheckKeyword(2, "ass", TOKEN_CLASS);
-          case 'o': return CheckKeyword(2, "nst", TOKEN_CONST);
+          case 'o': {
+            TokenType possible;
+
+            possible = CheckKeyword(2, "nst", TOKEN_CONST);  
+          
+            if (possible == TOKEN_IDENTIFIER) {
+              possible = CheckKeyword(2, "ntinue", TOKEN_CONTINUE);
+            }
+
+            return possible;
+          }
+          case 'a': return CheckKeyword(2, "se", TOKEN_CASE);
         }
       }
+    case 'd': return CheckKeyword(1, "efault", TOKEN_DEFAULT);
     case 'e': return CheckKeyword(1, "lse", TOKEN_ELSE);
     case 'f': 
       if (scanner.Current - scanner.Start > 1) {
@@ -166,17 +186,22 @@ static TokenType IdentifierType() {
     case 'i': {
       if (scanner.Current - scanner.Start > 1) {
         switch(scanner.Start[1]) {
-          case 'f': return CheckKeyword(2, "f", TOKEN_IF);
-          case 's': return CheckKeyword(2, "s", TOKEN_IS);
+          case 'f': return TOKEN_IF;
+          case 's': return TOKEN_IS;
         }
       }
     }
-    case 'l': return CheckKeyword(1, "ocal", TOKEN_LOCAL);
     case 'm': return CheckKeyword(1, "aybe", TOKEN_MAYBE);
     case 'n': return CheckKeyword(1, "ull", TOKEN_NULL);
     case 'o': return CheckKeyword(1, "r", TOKEN_OR);
+    case 'p': return CheckKeyword(1, "rint", TOKEN_PRINT);
     case 'r': return CheckKeyword(1, "eturn", TOKEN_RETURN);
-    case 's': return CheckKeyword(1, "tatic", TOKEN_STATIC);
+    case 's': if (scanner.Current - scanner.Start > 1) {
+        switch(scanner.Start[1]) {
+          case 't': return CheckKeyword(1, "atic", TOKEN_STATIC);
+          case 'w': return CheckKeyword(2, "itch", TOKEN_SWITCH);
+        }
+      }
     case 't':
       if (scanner.Current - scanner.Start > 1) {
         switch(scanner.Start[1]) {
@@ -184,6 +209,7 @@ static TokenType IdentifierType() {
           case 'r': return CheckKeyword(2, "ue", TOKEN_TRUE);
         }
       }
+    case 'v': return CheckKeyword(1, "ar", TOKEN_LOCAL);
     case 'w': return CheckKeyword(1, "hile", TOKEN_WHILE);
   }
   return TOKEN_IDENTIFIER;
@@ -216,19 +242,17 @@ Token ScannerScanToken() {
     case '{': 
       if (!inStringInterpolation)
         return TokenMake(TOKEN_BRACKET_OPEN);
-      
-      
-    
     case '}': return TokenMake(TOKEN_BRACKET_CLOSE); break;
     case '[': return TokenMake(TOKEN_SQUARE_OPEN); break;
     case ']': return TokenMake(TOKEN_SQUARE_CLOSE); break;
     case ',': return TokenMake(TOKEN_COMMA); break;
     case '.': return TokenMake(TOKEN_DOT); break;
+    case ':': return TokenMake(TOKEN_COLON); break;
     case ';': return TokenMake(TOKEN_SEMICOLON);
     case '+': 
-      return TokenMake(ScannerMatch('=') ? TOKEN_ADD_EQUAL : TOKEN_PLUS);
+      return TokenMake(ScannerMatch('=') ? TOKEN_ADD_EQUAL : (ScannerMatch('+') ? TOKEN_INCREASE : TOKEN_PLUS));
     case '-': 
-      return TokenMake(ScannerMatch('=') ? TOKEN_SUB_EQUAL: TOKEN_MINUS);
+      return TokenMake(ScannerMatch('=') ? TOKEN_SUB_EQUAL: (ScannerMatch('-') ? TOKEN_DECREASE : TOKEN_MINUS));
     case '*': 
       return TokenMake(ScannerMatch('=') ? TOKEN_MULT_EQUAL : TOKEN_STAR);
     case '/': 
@@ -244,5 +268,5 @@ Token ScannerScanToken() {
     case '"': return ScannerScanString();
   }
 
-  return TokenError("Unexpected character.");
+  return TokenError("Unexpected character");
 }

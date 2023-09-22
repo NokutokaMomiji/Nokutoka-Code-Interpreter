@@ -21,6 +21,18 @@ static int SimpleInstruction(const char* name, int offset) {
     return offset + 1;
 }
 
+static int ByteInstruction(const char* name, Chunk* chunk, int offset) {
+    uint8_t Slot = chunk->Code[offset + 1];
+    printf("%-16s %4d\n", name, Slot);
+    return offset + 2;
+}
+
+static int JumpInstruction(const char* name, int sign, Chunk* chunk, int offset) {
+    uint16_t Jump = (uint16_t)(chunk->Code[offset + 1] << 8);
+    Jump |= chunk->Code[offset + 2];
+    printf("%-16s %4d -> %d\n", name, offset + 3 + sign * Jump);
+    return offset + 3;
+}
 /// @brief Shows value of constant (byte)
 /// @param name Name of the constant instruction (OP_CONSTANT)
 /// @param chunk Chunk that contains the constants.
@@ -53,7 +65,7 @@ static int ConstantLongInstruction(const char* name, Chunk* chunk, int offset) {
 int DisassembleInstruction(Chunk* chunk, int offset) {
     printf("%04d ", offset);
 
-    printf("%4d ", GetLine(chunk, offset));
+    printf("%4d ", ChunkGetLine(chunk, offset));
 
     uint8_t Instruction = chunk->Code[offset];
     switch(Instruction) {
@@ -69,6 +81,20 @@ int DisassembleInstruction(Chunk* chunk, int offset) {
             return SimpleInstruction("OP_FALSE", offset);
         case OP_MAYBE:
             return SimpleInstruction("OP_MAYBE", offset);
+        case OP_POP:
+            return SimpleInstruction("OP_POP", offset);
+	case OP_DUPLICATE:
+	    return SimpleInstruction("OP_DUPLICATE", offset);
+	case OP_DEFINE_GLOBAL:
+            return ConstantInstruction("OP_DEFINE_GLOBAL", chunk, offset);
+        case OP_GET_GLOBAL:
+            return ConstantInstruction("OP_GET_GLOBAL", chunk, offset);
+        case OP_SET_GLOBAL:
+            return ConstantInstruction("OP_SET_GLOBAL", chunk, offset);
+        case OP_SET_LOCAL:
+            return ByteInstruction("OP_SET_LOCAL", chunk, offset);
+        case OP_GET_LOCAL:
+            return ByteInstruction("OP_SET_LOCAL", chunk, offset);
         case OP_EQUAL:
             return SimpleInstruction("OP_EQUAL", offset);
         case OP_NOT_EQUAL:
@@ -81,10 +107,20 @@ int DisassembleInstruction(Chunk* chunk, int offset) {
             return SimpleInstruction("OP_GREATER_EQ", offset);
         case OP_SMALLER_EQ:
             return SimpleInstruction("OP_SMALLER_EQ", offset);
+        case OP_IS:
+            return SimpleInstruction("OP_IS", offset);
         case OP_ADD:
             return SimpleInstruction("OP_ADD", offset);
+        case OP_POSTINCREASE:
+            return SimpleInstruction("OP_POSTINCREASE", offset);
+        case OP_PREINCREASE:
+            return SimpleInstruction("OP_PREINCREASE", offset);
         case OP_SUBTRACT:
             return SimpleInstruction("OP_SUBTRACT", offset);
+        case OP_POSTDECREASE:
+            return SimpleInstruction("OP_POSTDECREASE", offset);
+        case OP_PREDECREASE:
+            return SimpleInstruction("OP_PREDECREASE", offset);
         case OP_MULTIPLY:
             return SimpleInstruction("OP_MULTIPLY", offset);
         case OP_DIVIDE:
@@ -95,20 +131,18 @@ int DisassembleInstruction(Chunk* chunk, int offset) {
             return SimpleInstruction("OP_RETURN", offset);
         case OP_NOT:
             return SimpleInstruction("OP_NOT", offset);
+        case OP_PRINT:
+            return SimpleInstruction("OP_PRINT", offset);
+        case OP_JUMP:
+            return JumpInstruction("OP_JUMP", 1, chunk, offset);
+        case OP_JUMP_IF_FALSE:
+            return JumpInstruction("OP_JUMP_IF_FALSE", 1, chunk, offset);
+        case OP_LOOP:
+            return JumpInstruction("OP_LOOP", -1, chunk, offset);
+        case OP_CALL:
+            return ByteInstruction("OP_CALL", chunk, offset);
         default:
             printf("Unknown Operation Code %d\n", Instruction);
             return offset + 1;
     }
-}
-
-int GetLine(Chunk* chunk, int offset) {
-    int lineNumber = 1;
-    int totalInstructions = chunk->Lines[lineNumber];
-
-    while(totalInstructions < offset) {
-        lineNumber++;
-        totalInstructions += chunk->Lines[lineNumber];
-    }
-
-    return lineNumber;
 }

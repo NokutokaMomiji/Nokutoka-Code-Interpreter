@@ -1,16 +1,28 @@
 #ifndef NKCODE_VM_H
 #define NKCODE_VM_H
 
+#include "object.h"
 #include "chunk.h"
 #include "value.h"
+#include "table.h"
 
-#define STACK_MAX 256
+#define FRAMES_MAX 64
+#define STACK_MAX (FRAMES_MAX * UINT8_COUNT)
 
 typedef struct {
-    Chunk* chunk;
+    ObjFunction* Function;
     uint8_t* IP;
+    Value* Slots;
+} CallFrame;
+
+typedef struct {
+    CallFrame Frames[FRAMES_MAX];
+    int frameCount;
+
     Value Stack[STACK_MAX];
     Value* stackTop;
+    Table Strings;
+    Table Globals;
     Object* Objects;
 } VM;
 
@@ -32,6 +44,8 @@ InterpretResult InterpretChunk(Chunk* chunk);
 void Push(Value value);
 Value Pop();
 static Value Peek(int distance);
+static bool CallValue(Value callee, int argumentCount);
+static bool Call(ObjFunction* function, int argumentCount);
 static bool IsFalsey(Value Value);
 static void Concatenate();
 

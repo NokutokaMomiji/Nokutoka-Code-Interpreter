@@ -9,8 +9,8 @@ void ChunkInit(Chunk* chunk) {
     chunk->Capacity = 0;
     chunk->Code = NULL;
 
-    //Initialize line data.
-    chunk->currentLine = 0;
+    // Initialize line stuff.
+    chunk->lineCount = 0;
     chunk->lineCapacity = 0;
     chunk->Lines = NULL;
 
@@ -21,7 +21,7 @@ void ChunkInit(Chunk* chunk) {
 /// @brief Writes a byte to a Chunk array.
 /// @param chunk Chunk to write the byte to.
 /// @param byte Byte to store on Chunk.
-void ChunkWrite(Chunk* chunk, uint8_t byte) {
+void ChunkWrite(Chunk* chunk, uint8_t byte, int line) {
     //If there is not enough capacity for the new byte, then increase the size of the array.
     if (chunk->Capacity < chunk->Count + 1) {
         int oldCapacity = chunk->Capacity;
@@ -33,27 +33,30 @@ void ChunkWrite(Chunk* chunk, uint8_t byte) {
     chunk->Code[chunk->Count] = byte;
     chunk->Count++;
 
-    // This is merely to make sure that the Lines pointer actually points to valid memory.
-    if (chunk->lineCapacity < chunk->currentLine + 1) {
+    if (chunk->lineCount > 0 && chunk->Lines[chunk->lineCount - 1].Line == line)
+        return;
+    
+    if (chunk->lineCapacity < chunk->lineCount + 1) {
         int oldCapacity = chunk->lineCapacity;
         chunk->lineCapacity = GROW_CAPACITY(oldCapacity);
-        chunk->Lines = GROW_ARRAY(int, chunk->Lines, oldCapacity, chunk->lineCapacity);
+        chunk->Lines = GROW_ARRAY(LineStart, chunk->Lines, oldCapacity, chunk->lineCapacity);
     }
 
-    //Increase number of elements in current line.
-    chunk->Lines[chunk->currentLine]++;
+    LineStart* lineStart = &chunk->Lines[chunk->lineCount++];
+    lineStart->Offset = chunk->Count - 1;
+    lineStart->Line = line;
 }
 
-void ChunkWriteLong(Chunk* chunk, long number) {
+void ChunkWriteLong(Chunk* chunk, long number, int line) {
     uint8_t firstByte = (number & 0xff000000UL) >> 24;
     uint8_t secondByte = (number & 0x00ff0000UL) >> 16;
     uint8_t thirdByte = (number & 0x0000ff00UL) >> 8;
     uint8_t fourthByte = (number & 0x000000ffUL);
 
-    ChunkWrite(chunk, firstByte);
-    ChunkWrite(chunk, secondByte);
-    ChunkWrite(chunk, thirdByte);
-    ChunkWrite(chunk, fourthByte);
+    ChunkWrite(chunk, firstByte, line);
+    ChunkWrite(chunk, secondByte, line);
+    ChunkWrite(chunk, thirdByte, line);
+    ChunkWrite(chunk, fourthByte, line);
 }
 
 int ChunkAddConstant(Chunk* chunk, Value value) {
@@ -61,24 +64,20 @@ int ChunkAddConstant(Chunk* chunk, Value value) {
     return chunk->Constants.Count - 1;
 }
 
+int ChunkGetLine(Chunk* chunk, int instruction) {
+    int Start = 0;
+    int End = chunk->lineCount - 1;
 
-void ChunkIncreaseLine(Chunk* chunk) {
-    /*
-        In order to try and not be wasteful and have an array full of the same line numbers, we use a line
-        array that contains the number of instructions in each line, that way we can calculate the line number
-        based on the instruction offset.
-        Ex:
-            chunk->Lines[0] = 128; //128 instructions.
-    */
-    chunk->currentLine++;
-
-    if (chunk->lineCapacity < chunk->currentLine) {
-        int oldLineCapacity = chunk->lineCapacity;
-        chunk->lineCapacity = GROW_CAPACITY(oldLineCapacity);
-        chunk->Lines = GROW_ARRAY(int, chunk->Lines, oldLineCapacity, chunk->lineCapacity);
+    for (;;) {
+        int Mid = (Start + End) / 2;
+        LineStart* Line = &chunk->Lines[Mid];
+        if (instruction < Line->Offset)
+            End = Mid - 1;
+        else if (Mid == chunk->lineCount - 1 || instruction < chunk->Lines[Mid + 1].Offset)
+            return Line->Line;
+        else
+            Start = Mid + 1;
     }
-
-    chunk->Lines[chunk->currentLine] = 0;
 }
 
 /// @brief Frees up the memory occupied by an array.
@@ -91,7 +90,7 @@ void ChunkFree(Chunk* chunk) {
     ValueArrayFree(&chunk->Constants);
 
     //Free memory from line array.
-    FREE_ARRAY(int, chunk->Lines, chunk->lineCapacity);
+    FREE_ARRAY(LineStart, chunk->Lines, chunk->lineCapacity);
 
     //Reinitialize chunk.
     ChunkInit(chunk);

@@ -1,0 +1,13 @@
+function c() {
+    aaaaaaaaaaaaa;
+}
+
+function b() {
+    c();
+}
+
+function a() {
+    b();
+}
+
+a();
