@@ -1,8 +1,8 @@
-#ifndef NKCODE_MEMORY_H
-#define NKCODE_MEMORY_H
+#ifndef MOMIJI_MEMORY_H
+#define MOMIJI_MEMORY_H
 
-#include "common.h"
-#include "object.h"
+#include "Common.h"
+#include "Object.h"
 
 #define ALLOCATE(type, count) (type*)reallocate(NULL, 0, sizeof(type) * (count))
 
@@ -16,6 +16,9 @@
 #define FREE_ARRAY(type, pointer, oldCount) reallocate(pointer, sizeof(type) * (oldCount), 0)
 
 void* reallocate(void* pointer, size_t oldSize, size_t newSize);
+void MarkObject(Object* object);
+void MarkValue(Value value);
+void CollectGarbage();
 void FreeObjects();
 
 #endif

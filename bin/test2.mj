@@ -1,0 +1,14 @@
+function isEven(number, onEven) {
+	if ((number % 2) != 0) {
+		return false;
+	}
+
+	onEven(number);
+	return true;
+}
+
+isEven(2, function(value) { 
+	print(value); 
+	print("Even!"); 
+});
+

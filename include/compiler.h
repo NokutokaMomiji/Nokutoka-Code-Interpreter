@@ -1,10 +1,11 @@
-#ifndef NKCODE_COMPILER_H
-#define NKCODE_COMPILER_H
+#ifndef MOMIJI_COMPILER_H
+#define MOMIJI_COMPILER_H
 
-#include "chunk.h"
-#include "vm.h"
-#include "object.h"
+#include "Chunk.h"
+#include "VM.h"
+#include "Object.h"
 
 ObjFunction* Compile(const char* source);
+void CompilerMarkRoots();
 
 #endif

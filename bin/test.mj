@@ -1,0 +1,7 @@
+var hello = "holá buénäàs";
+var d = "💩";
+var f = "はじめまして";
+
+print(hello);
+print(d);
+print(f);

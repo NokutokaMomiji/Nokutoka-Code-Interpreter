@@ -1,0 +1,19 @@
+function length(array) {
+    var last = array[-1];
+    var i = 0;
+    while (true) {
+            var current = array[i];
+            if (current == last) return i + 1;
+            i++;
+    }
+}
+
+var a = [
+	"hello",
+	"there",
+	"general",
+	"kenobi"
+];
+
+print(a);
+print(length(a));

@@ -1,0 +1,28 @@
+// Creating an empty array.
+var a = [];
+
+// Populating array.
+for (var i = 0; i < 99; i++) {
+	a[i] = i * i;
+}
+
+// Testing singular array access.
+print("First.");
+print(a[5]);
+
+print("Second.");
+print(a[3:9]);
+
+print("Third.");
+print(a[9:3]);
+
+print("Fourth.");
+print(a[3:9:2]);
+
+print("Fifth.");
+print(a[3:9:-2]);
+
+print("Sixth.");
+print(a[::-1]);
+
+print("LMAOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO!");

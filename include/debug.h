@@ -1,11 +1,11 @@
-#ifndef NKCODE_DEBUG_H
-#define NKCODE_DEBUG_H
+#ifndef MOMIJI_DEBUG_H
+#define MOMIJI_DEBUG_H
 
-#include "chunk.h"
-#include "value.h"
+#include "Chunk.h"
+#include "Value.h"
 
-void DisassembleChunk(Chunk* chunk, const char* name);
-int DisassembleInstruction(Chunk* chunk, int offset);
-int GetLine(Chunk* chunk, int offset);
+void DisassembleChunk(MJ_Chunk* chunk, const char* name);
+int DisassembleInstruction(MJ_Chunk* chunk, int offset);
+int GetLine(MJ_Chunk* chunk, int offset);
 
 #endif

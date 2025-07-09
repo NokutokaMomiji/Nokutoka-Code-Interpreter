@@ -1,7 +1,7 @@
-#ifndef NKCODE_SCANNER_H
-#define NKCODE_SCANNER_H
+#ifndef MOMIJI_SCANNER_H
+#define MOMIJI_SCANNER_H
 
-#include "chunk.h"
+#include "Chunk.h"
 
 typedef enum {
     TOKEN_PARENTHESIS_OPEN,
@@ -32,6 +32,10 @@ typedef enum {
     TOKEN_SMALLER,
     TOKEN_GREATER_EQ,
     TOKEN_SMALLER_EQ,
+    TOKEN_MOD,
+    TOKEN_BITWISE_OR,
+    TOKEN_BITWISE_AND,
+    TOKEN_XOR,
     TOKEN_IDENTIFIER,
     TOKEN_STRING,
     TOKEN_NUMBER,
@@ -70,10 +74,10 @@ typedef enum {
 } TokenType;
 
 typedef struct {
-    TokenType Type;
-    const char* Start;
-    int Length;
-    int Line;
+    TokenType type;
+    const char* start;
+    int length;
+    int line;
 } Token;
 
 void ScannerInit(const char* source);

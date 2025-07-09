@@ -3,58 +3,67 @@
 #include <time.h>
 #include <stdlib.h> 
 #include <string.h>
+#include <math.h>
 
-#include "common.h"
-#include "scanner.h"
-#include "compiler.h"
-#include "debug.h"
-#include "vm.h"
-#include "object.h"
-#include "memory.h"
+#include "Common.h"
+#include "Scanner.h"
+#include "Compiler.h"
+#include "Debug.h"
+#include "Object.h"
+#include "Memory.h"
+#include "Array.h"
+#include "Map.h"
+#include "VM.h"
 
 VM vm;
 
+/// @brief Resets the VM's value stack.
 static void ResetStack() {
     vm.stackTop = vm.Stack;
     vm.frameCount = 0;
+    vm.openUpvalues = NULL;
 }
 
+/// @brief For reporting a Runtime Error.
 static void RuntimeError(const char* format, ...) {
-    CallFrame* Frame = &vm.Frames[vm.frameCount - 1];
-
     fprintf(stderr, "Exception Stacktrace (most recent call FIRST):\n");
-    for (int n = vm.frameCount - 1; n > 0; n--) {
-        CallFrame* frame = &vm.Frames[n];
-        ObjFunction* function = frame->Function;
-        size_t instruction = frame->IP - function->chunk.Code - 1;
 
-        int line = ChunkGetLine(&function->chunk, instruction);
-        char* content = ChunkGetSource(&function->chunk, instruction);
+    // We iterate through all of the frames to get the full traceback.
+    for (int n = vm.frameCount - 1; n >= 0; n--) {
+        CallFrame* frame = &vm.frames[n];
+        ObjFunction* function = frame->closure->function;
+        size_t instruction = frame->ip - function->chunk.code - 1;
 
-        fprintf(stderr, "   %4d | ", line);
-        if (function->Name == NULL)
-            fprintf(stderr, "<script>");
+        int line = MJ_ChunkGetLine(&function->chunk, instruction);
+        char* content = MJ_ChunkGetSource(&function->chunk, instruction);
+
+        fprintf(stderr, COLOR_MAGENTA "   %4d " COLOR_RESET "| ", line);
+        if (function->name == NULL)
+            fprintf(stderr, COLOR_CYAN "<script>" COLOR_RESET);
         else
-            fprintf(stderr, "%s()", function->Name->Chars);
+            fprintf(stderr, COLOR_CYAN "%s()" COLOR_RESET, function->name->chars);
         fprintf(stderr, " | %s\n", content);
     }
 
+    // We print out the error message.
     va_list args;
     va_start(args, format);
-    fprintf(stderr, "\nRuntimeError: ");
+    fprintf(stderr, "\n" COLOR_RED "RuntimeError" COLOR_RESET ": ");
     vfprintf(stderr, format, args);
     va_end(args);
     fputs("\n", stderr);
 
-    ObjFunction* Function = Frame->Function;
-    size_t instruction = Frame->IP - Function->chunk.Code - 1;
-    int line = ChunkGetLine(&Function->chunk, instruction);
-    char* content = ChunkGetSource(&Function->chunk, instruction);
+    // We print out the current line that triggered the error.
+    CallFrame* frame = &vm.frames[vm.frameCount - 1];
+    ObjFunction* function = frame->closure->function;
+    size_t instruction = frame->ip - function->chunk.code - 1;
+    int line = MJ_ChunkGetLine(&function->chunk, instruction);
+    char* content = MJ_ChunkGetSource(&function->chunk, instruction);
 
-    if (Frame->Function->Name == NULL)
+    if (function->name == NULL)
         fprintf(stderr, "In <script>: \n");
     else
-        fprintf(stderr, "In <%s()>: \n", Frame->Function->Name->Chars);
+        fprintf(stderr, "In <%s()>: \n", function->name->chars);
     
     fprintf(stderr, "   %4d | %s\n", line, content);
     ResetStack();
@@ -63,12 +72,29 @@ static void RuntimeError(const char* format, ...) {
 static void DefineNative(const char* name, NativeFn function) {
     Push(OBJECT_VALUE(StringCopy(name, (int)strlen(name))));
     Push(OBJECT_VALUE(NativeNew(function)));
-    TableSet(&vm.Globals, AS_STRING(vm.Stack[0]), vm.Stack[1]);
+    TableSet(&vm.globals, AS_STRING(vm.Stack[0]), vm.Stack[1]);
     PopN(2);
 }
 
+static Value ToNumberNative(int argumentCount, Value* arguments) {
+    if (argumentCount != 1)
+        RuntimeError("Excepted 1 argument, got %d.", argumentCount);
+
+    if (!IS_STRING(arguments[0]))
+        RuntimeError("Expected string value.");
+
+    
+}
+
+static Value ExitNative(int argumentCount, Value* arguments) {
+    if (argumentCount == 1 && IS_NUMBER(arguments[0]))
+        exit(AS_NUMBER(arguments[0]));
+    else
+        exit(0);
+}
+
 static Value InputNative(int argumentCount, Value* arguments) {
-    if (argumentCount > 0)
+    if (argumentCount > 0 && IS_STRING(arguments[0]))
         printf(AS_CSTRING(arguments[0]));
     
     char input[2048];
@@ -84,28 +110,230 @@ static Value ClockNative(int argumentCount, Value* arguments) {
     return NUMBER_VALUE((double)clock() / CLOCKS_PER_SEC);
 }
 
+static Value LengthNative(int argumentCount, Value* arguments) {
+    if (argumentCount != 1) {
+        RuntimeError("len expected 1 argument, got %d.", argumentCount);
+    }
+
+    if (IS_STRING(arguments[0])) {
+        ObjString* string = AS_STRING(arguments[0]);
+        return NUMBER_VALUE(string->length);
+    }
+
+    if (IS_ARRAY(arguments[0])) {
+        ObjArray* array = AS_ARRAY(arguments[0]);
+        return NUMBER_VALUE(array->items.count);
+    }
+
+    RuntimeError("len expected a valid argument.", argumentCount);
+    return NULL_VALUE;
+}
+
+static Value ExecNative(int argumentCount, Value* arguments) {
+    if (argumentCount != 1) {
+        RuntimeError("\"exec\" expected 1 argument, got %d.", argumentCount);
+        return NULL_VALUE;
+    }
+
+    if (!IS_STRING(arguments[0])) {
+        RuntimeError("\"exec\" expected a string.");
+        return NULL_VALUE;
+    }
+
+    return NULL_VALUE;
+}
+
 void VMInit() {
     ResetStack();
     srand(time(NULL));
-    vm.Objects = NULL;
-    TableInit(&vm.Strings);
-    TableInit(&vm.Globals);
+    vm.objects = NULL;
+
+    vm.allocatedBytes = 0;
+    vm.nextCollection = 1024 * 1024;
+
+    vm.grayCapacity = 0;
+    vm.grayCount = 0;
+    vm.grayStack = NULL;
+
+    vm.safeguardStack = malloc(sizeof(Object*) * 4);
+    if (vm.safeguardStack == NULL)
+        printf("> Failed to allocate safeguard stack.\n");
+
+    TableInit(&vm.strings);
+    TableInit(&vm.globals);
+
+    vm.initString = NULL;
 
     DefineNative("clock", ClockNative);
     DefineNative("input", InputNative);
+    DefineNative("exit", ExitNative);
+    DefineNative("len", LengthNative);
+    DefineNative("exec", ExecNative);
 }
+
 void VMFree() {
-    TableFree(&vm.Strings);
-    TableFree(&vm.Globals);
+    TableFree(&vm.strings);
+    TableFree(&vm.globals);
+    vm.initString = NULL;
     FreeObjects();
 }
 
+void Push(Value value) {
+    *vm.stackTop = value;
+    vm.stackTop++;
+}
+
+Value Pop() {
+    vm.stackTop--;
+    return *vm.stackTop;
+}
+
+Value PopN(int n) {
+    vm.stackTop -= n;
+    return *vm.stackTop;
+}
+
+static Value Peek(int distance) {
+    return vm.stackTop[-1 - distance];
+}
+
+static bool Call(ObjClosure* closure, int argumentCount) {
+    if (argumentCount != closure->function->arity) {
+        RuntimeError("Expected %d arguments but got %d instead.", closure->function->arity, argumentCount);
+        return false;
+    }
+
+    if (vm.frameCount == FRAMES_MAX) {
+        RuntimeError("Stack Overflow. Limit is %d.", FRAMES_MAX);
+        return false;
+    }
+
+    CallFrame* frame = &vm.frames[vm.frameCount++];
+    frame->closure = closure;
+    frame->ip = closure->function->chunk.code;
+    frame->slots = vm.stackTop - argumentCount - 1;
+
+    return true;
+}
+
+static bool CallValue(Value callee, int argumentCount) {
+    if (IS_OBJECT(callee)) {
+        switch (OBJECT_TYPE(callee)) {
+            case OBJ_CLASS: {
+                ObjClass* class = AS_CLASS(callee);
+                vm.stackTop[-argumentCount - 1] = OBJECT_VALUE(InstanceNew(class));
+                Value initializer;
+                if (TableGet(&class->methods, class->className, &initializer)) {
+                    return Call(AS_CLOSURE(initializer), argumentCount);
+                } else if (argumentCount != 0) {
+                    RuntimeError("Constructor expected 0 arguments but got %d.", argumentCount);
+                    return false;
+                }
+                return true;
+            }
+            case OBJ_NATIVE: {
+                NativeFn Native = AS_NATIVE(callee);
+                Value Result = Native(argumentCount, vm.stackTop - argumentCount);
+                vm.stackTop -= argumentCount + 1;
+                Push(Result);
+                return true;
+            }
+            case OBJ_CLOSURE: 
+                return Call(AS_CLOSURE(callee), argumentCount);
+            case OBJ_BOUND_METHOD: {
+                ObjBoundMethod* bound = AS_BOUND_METHOD(callee);
+                vm.stackTop[-argumentCount - 1] = bound->receiver;
+                return Call(bound->method, argumentCount);
+            }
+            default:
+                break;
+        }
+    }
+    RuntimeError("Can only call functions and classes.");
+    return false;
+}
+
+static bool BindMethod(ObjClass* class, ObjString* name) {
+    Value method;
+
+    if (!TableGet(&class->methods, name, &method)) {
+        RuntimeError("\"%s\" object has no property \"%s\".", class->className->chars, name->chars);
+        return false;
+    }
+
+    ObjBoundMethod* bound = BoundMethodNew(Peek(0), AS_CLOSURE(method));
+
+    Pop();
+    Push(OBJECT_VALUE(bound));
+    return true;
+}
+
+static ObjUpvalue* CaptureUpvalue(Value* local) {
+    ObjUpvalue* previousUpvalue = NULL;
+    ObjUpvalue* Upvalue = vm.openUpvalues;
+    while (Upvalue != NULL && Upvalue->location > local) {
+        previousUpvalue = Upvalue;
+        Upvalue = Upvalue->next;
+    }
+
+    if (Upvalue != NULL && Upvalue->location == local) 
+        return Upvalue;
+
+    ObjUpvalue* createdUpvalue = UpvalueNew(local);
+
+    createdUpvalue->next = Upvalue;
+    if (previousUpvalue == NULL) {
+        vm.openUpvalues = createdUpvalue;
+    }
+    else {
+        previousUpvalue->next = createdUpvalue;
+    }
+
+    return createdUpvalue;
+}
+
+static void CloseUpvalues(Value* last) {
+    while (vm.openUpvalues != NULL && vm.openUpvalues->location >= last) {
+        ObjUpvalue* Upvalue = vm.openUpvalues;
+        Upvalue->closed = *Upvalue->location;
+        Upvalue->location = &Upvalue->closed;
+        vm.openUpvalues = Upvalue->next;
+    }
+}
+
+static void DefineMethod(ObjString* name) {
+    Value method = Peek(0);
+    ObjClass* class = AS_CLASS(Peek(1));
+    TableSet(&class->methods, name, method);
+    Pop();
+}
+
+static bool IsFalsey(Value value) {
+    return (IS_NULL(value) || (IS_BOOL(value) && !AS_BOOL(value)));
+}
+
+static void Concatenate() {
+    ObjString* b = AS_STRING(Peek(0));
+    ObjString* a = AS_STRING(Peek(1));
+
+    int length = a->length + b->length;
+    char* chars = ALLOCATE(char, length + 1);
+    memcpy(chars, a->chars, a->length);
+    memcpy(chars + a->length, b->chars, b->length);
+
+    chars[length] = '\0';
+
+    ObjString* Result = StringTake(chars, length);
+    PopN(2);
+    Push(OBJECT_VALUE(Result));
+}
+
 static InterpretResult Run() {
-    CallFrame* Frame = &vm.Frames[vm.frameCount - 1];
-    #define READ_BYTE() (*Frame->IP++)
-    #define READ_CONSTANT() (Frame->Function->chunk.Constants.Values[READ_BYTE()])
-    #define READ_CONSTANT_LONG() (Frame->Function->chunk.Constants.Values[(READ_BYTE() << 24) + (READ_BYTE() << 16) + (READ_BYTE() << 8) + READ_BYTE()])
-    #define READ_SHORT() (Frame->IP += 2, (uint16_t)((Frame->IP[-2] << 8) | Frame->IP[-1]))
+    CallFrame* frame = &vm.frames[vm.frameCount - 1];
+    #define READ_BYTE() (*frame->ip++)
+    #define READ_CONSTANT() (frame->closure->function->chunk.constants.values[READ_BYTE()])
+    #define READ_CONSTANT_LONG() (frame->closure->function->chunk.constants.values[(READ_BYTE() << 24) + (READ_BYTE() << 16) + (READ_BYTE() << 8) + READ_BYTE()])
+    #define READ_SHORT() (frame->ip += 2, (uint16_t)((frame->ip[-2] << 8) | frame->ip[-1]))
     #define READ_STRING() AS_STRING(READ_CONSTANT())
     #define BINARY_OP(ValueType, op) \
         do { \
@@ -131,7 +359,7 @@ static InterpretResult Run() {
         }
         printf(" )");
         printf("\n");
-        DisassembleInstruction(&Frame->Function->chunk, (int)(Frame->IP - Frame->Function->chunk.Code));
+        DisassembleInstruction(&frame->closure->function->chunk, (int)(frame->ip - frame->closure->function->chunk.code));
 #endif
         uint8_t Instruction;
         switch(Instruction = READ_BYTE()) {
@@ -149,41 +377,202 @@ static InterpretResult Run() {
             case OP_TRUE:       Push(BOOL_VALUE(true));     break;
             case OP_FALSE:      Push(BOOL_VALUE(false));    break;
             case OP_MAYBE:      Push(BOOL_VALUE((bool)(rand() % 2))); break;
-            case OP_POP:        Pop();                      break;
+            case OP_POP: {
+                Pop();
+                break;
+            }
             case OP_DUPLICATE:  Push(Peek(0));              break;
             case OP_DEFINE_GLOBAL: {
-                ObjString* Name = READ_STRING();
-                TableSet(&vm.Globals, Name, Peek(0));
+                ObjString* name = READ_STRING();
+                TableSet(&vm.globals, name, Peek(0));
                 Pop();
                 break;
             }
             case OP_GET_GLOBAL: {
-                ObjString* Name = READ_STRING();
+                ObjString* name = READ_STRING();
                 Value value;
-                if (!TableGet(&vm.Globals, Name, &value)) {
-                    RuntimeError("Global variable '%s' not set before reading it.", Name->Chars);
+                if (!TableGet(&vm.globals, name, &value)) {
+                    RuntimeError("Global variable '%s' not set before reading it.", name->chars);
                     return INTERPRET_RUNTIME_ERROR;
                 }
                 Push(value);
                 break;
             }
             case OP_SET_GLOBAL: {
-                ObjString* Name = READ_STRING();
-                if (TableSet(&vm.Globals, Name, Peek(0))) {
-                    TableDelete(&vm.Globals, Name);
-                    RuntimeError("Global variable '%s' not set before reading it.", Name->Chars);
+                ObjString* name = READ_STRING();
+                if (TableSet(&vm.globals, name, Peek(0))) {
+                    TableDelete(&vm.globals, name);
+                    RuntimeError("Global variable '%s' not set before reading it.", name->chars);
                     return INTERPRET_RUNTIME_ERROR;
                 }
                 break;
             }
             case OP_SET_LOCAL: {
                 uint8_t Slot = READ_BYTE();
-                Frame->Slots[Slot] = Peek(0);
+                frame->slots[Slot] = Peek(0);
                 break;
             }
             case OP_GET_LOCAL: {
                 uint8_t Slot = READ_BYTE();
-                Push(Frame->Slots[Slot]);
+                Push(frame->slots[Slot]);
+                break;
+            }
+            case OP_SET_INDEX: {
+                if (!IS_OBJECT(Peek(2))) {
+                    RuntimeError("Cannot access the index of a non-object.");
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+
+                
+                Value value = Peek(0);
+                
+                switch(OBJECT_TYPE(Peek(2))) {
+                    case OBJ_ARRAY: {
+                        ObjArray* Array = AS_ARRAY(Peek(2));
+                        if (!MJ_ArraySet(Array, Peek(1), value)) {
+                            RuntimeError("Invalid array setting.");
+                            return INTERPRET_RUNTIME_ERROR;
+                        }
+                        break;
+                    }
+
+                    case OBJ_MAP: {
+                        ObjMap* Map = AS_MAP(Peek(2));
+                        if (!MapSet(Map, Peek(1), value)) {
+                            RuntimeError("Invalid array setting.");
+                            return INTERPRET_RUNTIME_ERROR;
+                        }
+                        break;
+                    }
+                }
+                
+                PopN(3);    // We pop out the value, the index and the list from the stack.
+                Push(value);
+                break;
+            }
+            case OP_GET_INDEX: {
+                if (!IS_OBJECT(Peek(1))) {
+                    RuntimeError("Cannot access the index of a non-object.");
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+
+                Value value;
+                switch(OBJECT_TYPE(Peek(1))) {
+                    case OBJ_ARRAY: {
+                        ObjArray* Array = AS_ARRAY(Peek(1));
+                        if (!MJ_ArrayGet(Array, Peek(0), &value)) {
+                            RuntimeError("Invalid array access.");
+                            return INTERPRET_RUNTIME_ERROR;
+                        }
+                        break;
+                    }
+
+                    case OBJ_MAP: {
+                        ObjMap* Map = AS_MAP(Peek(1));
+                        if (!MapGet(Map, Peek(0), &value)) {
+                            RuntimeError("Invalid map access.");
+                            return INTERPRET_RUNTIME_ERROR;
+                        }
+                        break;
+                    }
+                }
+
+                PopN(2);
+                Push(value);
+                break;
+            }
+            case OP_GET_INDEX_RANGED: {
+                if (!IS_OBJECT(Peek(3))) {
+                    RuntimeError("Cannot access the indexes of a non-object.");
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+
+                ObjArray* Array = AS_ARRAY(Peek(3));
+                Value newArray;
+                if (!MJ_ArrayGetRange(Array, Peek(2), Peek(1), Peek(0), &newArray)) {
+                    RuntimeError("Invalid array access.");
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+
+                PopN(3);
+                Push(newArray);
+                break;
+            }
+            case OP_SET_UPVALUE: {
+                uint8_t Slot = READ_BYTE();
+                *frame->closure->upvalues[Slot]->location = Peek(0);
+                break;
+            }
+            case OP_GET_UPVALUE: {
+                uint8_t Slot = READ_BYTE();
+                Push(*frame->closure->upvalues[Slot]->location);
+                break;
+            }
+            case OP_INIT_PROPERTY: {
+                if (!IS_CLASS(Peek(1))) {
+                    RuntimeError("Only classes have fields.");
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+
+                ObjClass* class = AS_CLASS(Peek(1));
+                ObjString* string = READ_STRING();
+
+                if (TableContains(&class->defaultFields, string)) {
+                    RuntimeError(
+                        "Duplicate field \"%s\" on class \"%s\".",
+                        string->chars, 
+                        class->className->chars
+                    );
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+
+                TableSet(&class->defaultFields, string, Peek(0));
+                Pop();
+                break;
+            }
+            case OP_SET_PROPERTY: {
+                if (!IS_INSTANCE(Peek(1))) {
+                    RuntimeError("Only class instances have fields.");
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+
+                ObjInstance* instance = AS_INSTANCE(Peek(1));
+                ObjString* string = READ_STRING();
+
+                if (!TableContains(&instance->fields, string)) {
+                    RuntimeError(
+                        "Instance of class \"%s\" has no field \"%s\".", 
+                        instance->class->className->chars,
+                        string->chars
+                    );
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+
+                TableSet(&instance->fields, string, Peek(0));
+                Value value = Pop();
+                Pop();
+                Push(value);
+                break;
+            }
+            case OP_GET_PROPERTY: {
+                if (!IS_INSTANCE(Peek(0))) {
+                    RuntimeError("Only class instances have properties.");
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+
+                ObjInstance* instance = AS_INSTANCE(Peek(0));
+                ObjString* name = READ_STRING();
+
+                Value value;
+                if (TableGet(&instance->fields, name, &value)) {
+                    Pop();
+                    Push(value);
+                    break;
+                }
+
+                if (!BindMethod(instance->class, name)) {
+                    return INTERPRET_RUNTIME_ERROR;
+                }
                 break;
             }
             case OP_EQUAL: {
@@ -229,8 +618,8 @@ static InterpretResult Run() {
                 break;
             }
             case OP_IS: {
-                Value b = Pop();
-                Value a = Pop();
+                Value b = Peek(0);
+                Value a = Peek(1);
 
                 if ((!IS_OBJECT(a) || !IS_OBJECT(b)) || (IS_STRING(a) && IS_STRING(b))) {
                     Push(BOOL_VALUE(ValuesEqual(a, b)));
@@ -241,7 +630,7 @@ static InterpretResult Run() {
                     Push(BOOL_VALUE(false));
                     break;
                 }
-
+                PopN(2);
                 Push(BOOL_VALUE(&AS_OBJECT(a) > &AS_OBJECT(b)));
                 break;
             }
@@ -256,9 +645,10 @@ static InterpretResult Run() {
             case OP_POSTINCREASE: {
                 if (!IS_NUMBER(Peek(0))) {
                     RuntimeError("Cannot post-increase a variable with a non-number value.");
-                    break;
+                    return INTERPRET_RUNTIME_ERROR;
                 }
-                Value a = Pop();
+                Value a = Peek(0);
+                Pop();
                 Push(a);
                 Push(NUMBER_VALUE(AS_NUMBER(a) + 1));
                 break;
@@ -266,11 +656,12 @@ static InterpretResult Run() {
             case OP_PREINCREASE: {
                 if (!IS_NUMBER(Peek(0))) {
                     RuntimeError("Cannot pre-increase a variable with a non-number value.");
-                    break;
+                    return INTERPRET_RUNTIME_ERROR;
                 }
 
-                Value a = Pop();
+                Value a = Peek(0);
                 Value b = NUMBER_VALUE(AS_NUMBER(a) + 1);
+                Pop();
                 Push(b);
                 Push(b);
                 break;
@@ -279,7 +670,7 @@ static InterpretResult Run() {
             case OP_POSTDECREASE: {
                 if (!IS_NUMBER(Peek(0))) {
                     RuntimeError("Cannot post-decrease a variable with a non-number value.");
-                    break;
+                    return INTERPRET_RUNTIME_ERROR;
                 }
 
                 Value a = Peek(0);
@@ -289,17 +680,94 @@ static InterpretResult Run() {
             case OP_PREDECREASE: {
                 if (!IS_NUMBER(Peek(0))) {
                     RuntimeError("Cannot pre-decrease a variable with a non-number value.");
-                    break;
+                    return INTERPRET_RUNTIME_ERROR;
                 }
 
-                Value a = Pop();
+                Value a = Peek(0);
                 Value b = NUMBER_VALUE(AS_NUMBER(a) - 1);
+                Pop();
                 Push(b);
                 Push(b);
                 break;
             }
             case OP_MULTIPLY:   BINARY_OP(NUMBER_VALUE, *); break;
             case OP_DIVIDE:     BINARY_OP(NUMBER_VALUE, /); break;
+            case OP_MOD: {
+                Value a = Peek(0);
+                Value b = Peek(1);
+
+                if (!IS_NUMBER(a) || !IS_NUMBER(b)) {
+                    RuntimeError("Operands must be numbers.");
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+
+                double result = fmod(AS_NUMBER(b), AS_NUMBER(a));
+
+                PopN(2);
+                Push(NUMBER_VALUE(result));
+
+                break;
+            }
+            case OP_BITWISE_AND: {
+                Value a = Peek(0);
+                Value b = Peek(1);
+
+                if (IS_OBJECT(a) || IS_OBJECT(b)) {
+                    RuntimeError("Cannot perform an and operation between two objects");
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+
+                unsigned char* aBytes;
+                unsigned char* bBytes;
+
+                switch (a.type) {
+                    case VALUE_BOOL:    aBytes = (unsigned char*)AS_BOOL(a);           break;
+                    case VALUE_NUMBER:  aBytes = (unsigned char*)((int)AS_NUMBER(a));  break;
+                    case VALUE_NULL:    aBytes = 0;
+                }
+
+                switch (b.type) {
+                    case VALUE_BOOL:    bBytes = (unsigned char*)AS_BOOL(b);           break;
+                    case VALUE_NUMBER:  bBytes = (unsigned char*)((int)AS_NUMBER(b));  break;
+                    case VALUE_NULL:    bBytes = 0;
+                }
+
+                int result = (int)aBytes & (int)bBytes;
+
+                PopN(2);
+                Push(NUMBER_VALUE(result));
+                break;
+            }
+            case OP_BITWISE_OR: {
+                Value a = Peek(0);
+                Value b = Peek(1);
+
+                if (IS_OBJECT(a) || IS_OBJECT(b)) {
+                    RuntimeError("Cannot perform an or operation between two objects");
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+
+                unsigned char* aBytes;
+                unsigned char* bBytes;
+
+                switch (a.type) {
+                    case VALUE_BOOL:    aBytes = (unsigned char*)AS_BOOL(a);           break;
+                    case VALUE_NUMBER:  aBytes = (unsigned char*)((int)AS_NUMBER(a));  break;
+                    case VALUE_NULL:    aBytes = 0;
+                }
+
+                switch (b.type) {
+                    case VALUE_BOOL:    bBytes = (unsigned char*)AS_BOOL(b);           break;
+                    case VALUE_NUMBER:  bBytes = (unsigned char*)((int)AS_NUMBER(b));  break;
+                    case VALUE_NULL:    bBytes = 0;
+                }
+
+                int result = (int)aBytes | (int)bBytes;
+
+                PopN(2);
+                Push(NUMBER_VALUE(result));
+                break;
+            }
             case OP_NOT:        Push(BOOL_VALUE(IsFalsey(Pop()))); break;
             case OP_NEGATE: {
                 bool isNum = IS_NUMBER(Peek(0));
@@ -319,18 +787,18 @@ static InterpretResult Run() {
             }
             case OP_JUMP: {
                 uint16_t Offset = READ_SHORT();
-                Frame->IP += Offset;
+                frame->ip += Offset;
                 break;
             }
             case OP_JUMP_IF_FALSE: {
                 uint16_t Offset = READ_SHORT();
                 if (IsFalsey(Peek(0)))
-                    Frame->IP += Offset;
+                    frame->ip += Offset;
                 break;
             }
             case OP_LOOP: {
                 uint16_t Offset = READ_SHORT();
-                Frame->IP -= Offset;
+                frame->ip -= Offset;
                 break;
             }
             case OP_CALL: {
@@ -338,20 +806,76 @@ static InterpretResult Run() {
                 if (!CallValue(Peek(argumentCount), argumentCount))
                     return INTERPRET_RUNTIME_ERROR;
                 
-                Frame = &vm.Frames[vm.frameCount - 1];
+                frame = &vm.frames[vm.frameCount - 1];
+                break;
+            }
+            case OP_CLOSURE: {
+                ObjFunction* function = AS_FUNCTION(READ_CONSTANT());
+                ObjClosure* closure = ClosureNew(function);
+                Push(OBJECT_VALUE(closure));
+
+                for (int i = 0; i < closure->upvalueCount; i++) {
+                    uint8_t isLocal = READ_BYTE();
+                    uint8_t index = READ_BYTE();
+                    if (isLocal)
+                        closure->upvalues[i] = CaptureUpvalue(frame->slots + index);
+                    else
+                        closure->upvalues[i] = frame->closure->upvalues[index];
+                }
+                break;
+            }
+            case OP_ARRAY: {
+                int numOfItems = READ_SHORT();
+                ObjArray* Array = ArrayNew();
+
+                // We jump over all of the item values and move to the NULL placeholder value.
+                vm.stackTop[-numOfItems - 1] = OBJECT_VALUE(Array);
+
+                for (int i = numOfItems - 1; i >= 0; i--) {
+                    MJ_ArrayAdd(Array, Peek(i));
+                }
+                PopN(numOfItems);
+                break;
+            }
+
+            case OP_MAP: {
+                int numOfItems = READ_SHORT();
+                ObjMap* Map = MapNew();
+
+                vm.stackTop[-numOfItems - 1] = OBJECT_VALUE(Map);
+
+                for (int i = numOfItems - 1; i >= 0; i -= 2) {
+                    MapSet(Map, Peek(i), Peek(i - 1));
+                }
+
+                PopN(numOfItems);
+                break;
+            }
+            case OP_CLASS: {
+                Push(OBJECT_VALUE(ClassNew(READ_STRING())));
+                break;
+            }
+            case OP_METHOD: {
+                DefineMethod(READ_STRING());
+                break;
+            }
+            case OP_CLOSE_UPVALUE: {
+                CloseUpvalues(vm.stackTop - 1);
+                Pop();
                 break;
             }
             case OP_RETURN: {
                 Value Result = Pop();
+                CloseUpvalues(frame->slots);
                 vm.frameCount--;
                 if (vm.frameCount == 0) {
                     Pop();
                     return INTERPRET_OK;
                 }
 
-                vm.stackTop = Frame->Slots;
+                vm.stackTop = frame->slots;
                 Push(Result);
-                Frame = &vm.Frames[vm.frameCount - 1];
+                frame = &vm.frames[vm.frameCount - 1];
                 break;
             }
         }
@@ -366,94 +890,17 @@ static InterpretResult Run() {
 }
 
 InterpretResult Interpret(const char* source) {
-    ObjFunction* Function = Compile(source);
-    if (Function == NULL)
-        return INTERPRET_COMPILE_ERROR;
-    
-    Push(OBJECT_VALUE(Function));
-    CallFrame* Frame = &vm.Frames[vm.frameCount];
-    Frame->Function = Function;
-    Frame->IP = Function->chunk.Code;
-    Frame->Slots = vm.Stack;
+    ObjFunction* function = Compile(source);
 
-    Call(Function, 0);
+    if (function == NULL)
+        return INTERPRET_COMPILE_ERROR;
+
+    Push(OBJECT_VALUE(function));
+    ObjClosure* closure = ClosureNew(function);
+    Pop();
+    Push(OBJECT_VALUE(closure));
+
+    Call(closure, 0);
 
     return Run();
-}
-
-void Push(Value value) {
-    *vm.stackTop = value;
-    vm.stackTop++;
-}
-
-Value Pop() {
-    vm.stackTop--;
-    return *vm.stackTop;
-}
-
-Value PopN(int n) {
-    vm.stackTop -= n;
-    return *vm.stackTop;
-}
-
-static Value Peek(int distance) {
-    return vm.stackTop[-1 - distance];
-}
-
-static bool Call(ObjFunction* function, int argumentCount) {
-    if (argumentCount != function->Arity) {
-        RuntimeError("Expected %d arguments but got %d instead.", function->Arity, argumentCount);
-        return false;
-    }
-
-    if (vm.frameCount == FRAMES_MAX) {
-        RuntimeError("Stack Overflow. Limit is %d.", FRAMES_MAX);
-        return false;
-    }
-
-    CallFrame* Frame = &vm.Frames[vm.frameCount++];
-    Frame->Function = function;
-    Frame->IP = function->chunk.Code;
-    Frame->Slots = vm.stackTop - argumentCount - 1;
-
-    return true;
-}
-
-static bool CallValue(Value callee, int argumentCount) {
-    if (IS_OBJECT(callee)) {
-        switch (OBJECT_TYPE(callee)) {
-            case OBJ_NATIVE: {
-                NativeFn Native = AS_NATIVE(callee);
-                Value Result = Native(argumentCount, vm.stackTop - argumentCount);
-                vm.stackTop -= argumentCount + 1;
-                Push(Result);
-                return true;
-            }
-            case OBJ_FUNCTION:
-                return Call(AS_FUNCTION(callee), argumentCount);
-            default:
-                break;
-        }
-    }
-    RuntimeError("Can only call functions and classes.");
-    return false;
-}
-
-static bool IsFalsey(Value value) {
-    return (IS_NULL(value) || (IS_BOOL(value) && !AS_BOOL(value)));
-}
-
-static void Concatenate() {
-    ObjString* b = AS_STRING(Pop());
-    ObjString* a = AS_STRING(Pop());
-
-    int Length = a->Length + b->Length;
-    char* Chars = ALLOCATE(char, Length + 1);
-    memcpy(Chars, a->Chars, a->Length);
-    memcpy(Chars + a->Length, b->Chars, b->Length);
-
-    Chars[Length] = '\0';
-
-    ObjString* Result = StringTake(Chars, Length);
-    Push(OBJECT_VALUE(Result));
 }
