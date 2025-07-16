@@ -143,6 +143,53 @@ static Value ExecNative(int argumentCount, Value* arguments) {
     return NULL_VALUE;
 }
 
+static Value SystemNative(int argumentCount, Value* arguments) {
+    if (argumentCount != 1) {
+        RuntimeError("\"system\" expected 1 argument, got %d.", argumentCount);
+        return NULL_VALUE;
+    }
+
+    if (!IS_STRING(arguments[0])) {
+        RuntimeError("\"system\" expected a string.");
+        return NULL_VALUE;
+    }
+
+    int result = system(AS_CSTRING(arguments[0]));
+
+    return NUMBER_VALUE(result);
+}
+
+static void PrintCallFrame(const CallFrame* frame) {
+    ObjFunction* function = frame->closure->function;
+    // Figure out the instruction‐pointer offset
+    size_t ipOffset = (size_t)(frame->ip - function->chunk.code);
+    // Figure out which slot in the VM stack this frame's locals start at
+    int slotIndex = (int)(frame->slots - vm.Stack);
+
+    // Print header line
+    printf(
+        "=== CallFrame @ stack[%d] ===\n"
+        "Function : '%s'\n"
+        "Arity    : %d\n"
+        "IP Offset: %zu\n",
+        slotIndex,
+        function->name ? function->name->chars : "<script>",
+        function->arity,
+        ipOffset
+    );
+
+    // Print the argument/local values
+    if (function->arity > 0) {
+        printf("Locals/Args:");
+        for (int i = 0; i < function->arity; i++) {
+            printf(" ");
+            ValuePrint(frame->slots[i]);
+        }
+        printf("\n");
+    }
+    printf("===========================\n");
+}
+
 void VMInit() {
     ResetStack();
     srand(time(NULL));
@@ -169,6 +216,7 @@ void VMInit() {
     DefineNative("exit", ExitNative);
     DefineNative("len", LengthNative);
     DefineNative("exec", ExecNative);
+    DefineNative("system", SystemNative);
 }
 
 void VMFree() {
@@ -212,7 +260,7 @@ static bool Call(ObjClosure* closure, int argumentCount) {
     frame->closure = closure;
     frame->ip = closure->function->chunk.code;
     frame->slots = vm.stackTop - argumentCount - 1;
-
+    PrintCallFrame(frame);
     return true;
 }
 
@@ -222,9 +270,8 @@ static bool CallValue(Value callee, int argumentCount) {
             case OBJ_CLASS: {
                 ObjClass* class = AS_CLASS(callee);
                 vm.stackTop[-argumentCount - 1] = OBJECT_VALUE(InstanceNew(class));
-                Value initializer;
-                if (TableGet(&class->methods, class->className, &initializer)) {
-                    return Call(AS_CLOSURE(initializer), argumentCount);
+                if (IS_CLOSURE(class->constructor)) {
+                    return Call(AS_CLOSURE(class->constructor), argumentCount);
                 } else if (argumentCount != 0) {
                     RuntimeError("Constructor expected 0 arguments but got %d.", argumentCount);
                     return false;
@@ -251,6 +298,36 @@ static bool CallValue(Value callee, int argumentCount) {
     }
     RuntimeError("Can only call functions and classes.");
     return false;
+}
+
+static bool InvokeFromClass(ObjClass* class, ObjString* name, int argumentCount) {
+    Value method;
+
+    if (!TableGet(&class->methods, name, &method)) {
+        RuntimeError("\"%s\" object has no property \"%s\".", class->className->chars, name->chars);
+        return false;
+    }
+
+    return Call(AS_CLOSURE(method), argumentCount);
+}
+
+static bool Invoke(ObjString* name, int argumentCount) {
+    Value receiver = Peek(argumentCount);
+
+    if (!IS_INSTANCE(receiver)) {
+        RuntimeError("Only instances have methods.");
+        return false;
+    }
+
+    ObjInstance* instance = AS_INSTANCE(receiver);
+
+    Value value;
+    if (TableGet(&instance->fields, name, &value)) {
+        vm.stackTop[-argumentCount - 1] = value;
+        return CallValue(value, argumentCount);
+    }
+
+    return InvokeFromClass(instance->class, name, argumentCount);
 }
 
 static bool BindMethod(ObjClass* class, ObjString* name) {
@@ -301,11 +378,22 @@ static void CloseUpvalues(Value* last) {
     }
 }
 
-static void DefineMethod(ObjString* name) {
+static bool DefineMethod(ObjString* name) {
     Value method = Peek(0);
     ObjClass* class = AS_CLASS(Peek(1));
-    TableSet(&class->methods, name, method);
+
+    if (strcmp(name->chars, class->className->chars) == 0) {
+        if (!IS_NULL(class->constructor)) {
+            RuntimeError("Duplicate constructor defined for class \"%s\".", class->className->chars);
+            return false;
+        }
+        class->constructor = method;
+    } else {
+        TableSet(&class->methods, name, method);
+    }
+
     Pop();
+    return true;
 }
 
 static bool IsFalsey(Value value) {
@@ -339,7 +427,7 @@ static InterpretResult Run() {
         do { \
             if ((!IS_NUMBER(Peek(0)) && !IS_BOOL(Peek(0))) || (!IS_NUMBER(Peek(1)) && !IS_BOOL(Peek(1)))) { \
                 RuntimeError("Operands must be numbers."); \
-                return INTERPRET_RUNTIME_ERROR; \
+                return RUNTIME_ERROR(NULL_VALUE); \
             } \
             Value first = Pop(); \
             Value second = Pop(); \
@@ -393,7 +481,7 @@ static InterpretResult Run() {
                 Value value;
                 if (!TableGet(&vm.globals, name, &value)) {
                     RuntimeError("Global variable '%s' not set before reading it.", name->chars);
-                    return INTERPRET_RUNTIME_ERROR;
+                    return RUNTIME_ERROR(NULL_VALUE);
                 }
                 Push(value);
                 break;
@@ -403,7 +491,7 @@ static InterpretResult Run() {
                 if (TableSet(&vm.globals, name, Peek(0))) {
                     TableDelete(&vm.globals, name);
                     RuntimeError("Global variable '%s' not set before reading it.", name->chars);
-                    return INTERPRET_RUNTIME_ERROR;
+                    return RUNTIME_ERROR(NULL_VALUE);
                 }
                 break;
             }
@@ -420,7 +508,7 @@ static InterpretResult Run() {
             case OP_SET_INDEX: {
                 if (!IS_OBJECT(Peek(2))) {
                     RuntimeError("Cannot access the index of a non-object.");
-                    return INTERPRET_RUNTIME_ERROR;
+                    return RUNTIME_ERROR(NULL_VALUE);
                 }
 
                 
@@ -431,7 +519,7 @@ static InterpretResult Run() {
                         ObjArray* Array = AS_ARRAY(Peek(2));
                         if (!MJ_ArraySet(Array, Peek(1), value)) {
                             RuntimeError("Invalid array setting.");
-                            return INTERPRET_RUNTIME_ERROR;
+                            return RUNTIME_ERROR(NULL_VALUE);
                         }
                         break;
                     }
@@ -440,7 +528,7 @@ static InterpretResult Run() {
                         ObjMap* Map = AS_MAP(Peek(2));
                         if (!MapSet(Map, Peek(1), value)) {
                             RuntimeError("Invalid array setting.");
-                            return INTERPRET_RUNTIME_ERROR;
+                            return RUNTIME_ERROR(NULL_VALUE);
                         }
                         break;
                     }
@@ -453,7 +541,7 @@ static InterpretResult Run() {
             case OP_GET_INDEX: {
                 if (!IS_OBJECT(Peek(1))) {
                     RuntimeError("Cannot access the index of a non-object.");
-                    return INTERPRET_RUNTIME_ERROR;
+                    return RUNTIME_ERROR(NULL_VALUE);
                 }
 
                 Value value;
@@ -462,7 +550,7 @@ static InterpretResult Run() {
                         ObjArray* Array = AS_ARRAY(Peek(1));
                         if (!MJ_ArrayGet(Array, Peek(0), &value)) {
                             RuntimeError("Invalid array access.");
-                            return INTERPRET_RUNTIME_ERROR;
+                            return RUNTIME_ERROR(NULL_VALUE);
                         }
                         break;
                     }
@@ -471,7 +559,7 @@ static InterpretResult Run() {
                         ObjMap* Map = AS_MAP(Peek(1));
                         if (!MapGet(Map, Peek(0), &value)) {
                             RuntimeError("Invalid map access.");
-                            return INTERPRET_RUNTIME_ERROR;
+                            return RUNTIME_ERROR(NULL_VALUE);
                         }
                         break;
                     }
@@ -484,14 +572,14 @@ static InterpretResult Run() {
             case OP_GET_INDEX_RANGED: {
                 if (!IS_OBJECT(Peek(3))) {
                     RuntimeError("Cannot access the indexes of a non-object.");
-                    return INTERPRET_RUNTIME_ERROR;
+                    return RUNTIME_ERROR(NULL_VALUE);
                 }
 
                 ObjArray* Array = AS_ARRAY(Peek(3));
                 Value newArray;
                 if (!MJ_ArrayGetRange(Array, Peek(2), Peek(1), Peek(0), &newArray)) {
                     RuntimeError("Invalid array access.");
-                    return INTERPRET_RUNTIME_ERROR;
+                    return RUNTIME_ERROR(NULL_VALUE);
                 }
 
                 PopN(3);
@@ -511,7 +599,7 @@ static InterpretResult Run() {
             case OP_INIT_PROPERTY: {
                 if (!IS_CLASS(Peek(1))) {
                     RuntimeError("Only classes have fields.");
-                    return INTERPRET_RUNTIME_ERROR;
+                    return RUNTIME_ERROR(NULL_VALUE);
                 }
 
                 ObjClass* class = AS_CLASS(Peek(1));
@@ -523,7 +611,7 @@ static InterpretResult Run() {
                         string->chars, 
                         class->className->chars
                     );
-                    return INTERPRET_RUNTIME_ERROR;
+                    return RUNTIME_ERROR(NULL_VALUE);
                 }
 
                 TableSet(&class->defaultFields, string, Peek(0));
@@ -533,7 +621,7 @@ static InterpretResult Run() {
             case OP_SET_PROPERTY: {
                 if (!IS_INSTANCE(Peek(1))) {
                     RuntimeError("Only class instances have fields.");
-                    return INTERPRET_RUNTIME_ERROR;
+                    return RUNTIME_ERROR(NULL_VALUE);
                 }
 
                 ObjInstance* instance = AS_INSTANCE(Peek(1));
@@ -545,7 +633,7 @@ static InterpretResult Run() {
                         instance->class->className->chars,
                         string->chars
                     );
-                    return INTERPRET_RUNTIME_ERROR;
+                    return RUNTIME_ERROR(NULL_VALUE);
                 }
 
                 TableSet(&instance->fields, string, Peek(0));
@@ -557,7 +645,7 @@ static InterpretResult Run() {
             case OP_GET_PROPERTY: {
                 if (!IS_INSTANCE(Peek(0))) {
                     RuntimeError("Only class instances have properties.");
-                    return INTERPRET_RUNTIME_ERROR;
+                    return RUNTIME_ERROR(NULL_VALUE);
                 }
 
                 ObjInstance* instance = AS_INSTANCE(Peek(0));
@@ -571,7 +659,16 @@ static InterpretResult Run() {
                 }
 
                 if (!BindMethod(instance->class, name)) {
-                    return INTERPRET_RUNTIME_ERROR;
+                    return RUNTIME_ERROR(NULL_VALUE);
+                }
+                break;
+            }
+            case OP_GET_SUPER: {
+                ObjString* name = READ_STRING();
+                ObjClass* superclass = AS_CLASS(Pop());
+
+                if (!BindMethod(superclass, name)) {
+                    return RUNTIME_ERROR(NULL_VALUE);
                 }
                 break;
             }
@@ -645,7 +742,7 @@ static InterpretResult Run() {
             case OP_POSTINCREASE: {
                 if (!IS_NUMBER(Peek(0))) {
                     RuntimeError("Cannot post-increase a variable with a non-number value.");
-                    return INTERPRET_RUNTIME_ERROR;
+                    return RUNTIME_ERROR(NULL_VALUE);
                 }
                 Value a = Peek(0);
                 Pop();
@@ -656,7 +753,7 @@ static InterpretResult Run() {
             case OP_PREINCREASE: {
                 if (!IS_NUMBER(Peek(0))) {
                     RuntimeError("Cannot pre-increase a variable with a non-number value.");
-                    return INTERPRET_RUNTIME_ERROR;
+                    return RUNTIME_ERROR(NULL_VALUE);
                 }
 
                 Value a = Peek(0);
@@ -670,7 +767,7 @@ static InterpretResult Run() {
             case OP_POSTDECREASE: {
                 if (!IS_NUMBER(Peek(0))) {
                     RuntimeError("Cannot post-decrease a variable with a non-number value.");
-                    return INTERPRET_RUNTIME_ERROR;
+                    return RUNTIME_ERROR(NULL_VALUE);
                 }
 
                 Value a = Peek(0);
@@ -680,7 +777,7 @@ static InterpretResult Run() {
             case OP_PREDECREASE: {
                 if (!IS_NUMBER(Peek(0))) {
                     RuntimeError("Cannot pre-decrease a variable with a non-number value.");
-                    return INTERPRET_RUNTIME_ERROR;
+                    return RUNTIME_ERROR(NULL_VALUE);
                 }
 
                 Value a = Peek(0);
@@ -698,7 +795,7 @@ static InterpretResult Run() {
 
                 if (!IS_NUMBER(a) || !IS_NUMBER(b)) {
                     RuntimeError("Operands must be numbers.");
-                    return INTERPRET_RUNTIME_ERROR;
+                    return RUNTIME_ERROR(NULL_VALUE);
                 }
 
                 double result = fmod(AS_NUMBER(b), AS_NUMBER(a));
@@ -714,7 +811,7 @@ static InterpretResult Run() {
 
                 if (IS_OBJECT(a) || IS_OBJECT(b)) {
                     RuntimeError("Cannot perform an and operation between two objects");
-                    return INTERPRET_RUNTIME_ERROR;
+                    return RUNTIME_ERROR(NULL_VALUE);
                 }
 
                 unsigned char* aBytes;
@@ -742,27 +839,12 @@ static InterpretResult Run() {
                 Value a = Peek(0);
                 Value b = Peek(1);
 
-                if (IS_OBJECT(a) || IS_OBJECT(b)) {
-                    RuntimeError("Cannot perform an or operation between two objects");
-                    return INTERPRET_RUNTIME_ERROR;
+                if (!IS_NUMBER(a) || !IS_NUMBER(b)) {
+                    RuntimeError("Invalid operands for operation.");
+                    return RUNTIME_ERROR(NULL_VALUE);
                 }
 
-                unsigned char* aBytes;
-                unsigned char* bBytes;
-
-                switch (a.type) {
-                    case VALUE_BOOL:    aBytes = (unsigned char*)AS_BOOL(a);           break;
-                    case VALUE_NUMBER:  aBytes = (unsigned char*)((int)AS_NUMBER(a));  break;
-                    case VALUE_NULL:    aBytes = 0;
-                }
-
-                switch (b.type) {
-                    case VALUE_BOOL:    bBytes = (unsigned char*)AS_BOOL(b);           break;
-                    case VALUE_NUMBER:  bBytes = (unsigned char*)((int)AS_NUMBER(b));  break;
-                    case VALUE_NULL:    bBytes = 0;
-                }
-
-                int result = (int)aBytes | (int)bBytes;
+                int result = (int)floor(AS_NUMBER(a)) | (int)floor(AS_NUMBER(b));
 
                 PopN(2);
                 Push(NUMBER_VALUE(result));
@@ -774,7 +856,7 @@ static InterpretResult Run() {
                 bool isBool = IS_BOOL(Peek(0));
                 if (!isNum && !isBool) {
                     RuntimeError("Type %s cannot be negated.");
-                    return INTERPRET_RUNTIME_ERROR;
+                    return RUNTIME_ERROR(NULL_VALUE);
                 }
                 Value popedValue = Pop();
                 Push(NUMBER_VALUE((isNum) ? -AS_NUMBER(popedValue) : -(double)(AS_BOOL(popedValue))));
@@ -804,8 +886,44 @@ static InterpretResult Run() {
             case OP_CALL: {
                 int argumentCount = READ_BYTE();
                 if (!CallValue(Peek(argumentCount), argumentCount))
-                    return INTERPRET_RUNTIME_ERROR;
+                    return RUNTIME_ERROR(NULL_VALUE);
                 
+                frame = &vm.frames[vm.frameCount - 1];
+                break;
+            }
+            case OP_INVOKE: {
+                ObjString* method = READ_STRING();
+                int argumentCount = READ_BYTE();
+
+                if (!Invoke(method, argumentCount)) {
+                    return RUNTIME_ERROR(NULL_VALUE);
+                }
+
+                frame = &vm.frames[vm.frameCount - 1];
+                break;
+            }
+            case OP_SUPER_INVOKE: {
+                ObjString* method = READ_STRING();
+                int argumentCount = READ_BYTE();
+                ObjClass* superclass = AS_CLASS(Pop());
+
+                if (strcmp(method->chars, "super") == 0) {
+                    if (!IS_CLOSURE(superclass->constructor)) {
+                        RuntimeError("Cannot call super since superclass has no constructor");
+                        return RUNTIME_ERROR(NULL_VALUE);
+                    }
+                    
+                    if (!Call(AS_CLOSURE(superclass->constructor), argumentCount)) {
+                        return RUNTIME_ERROR(NULL_VALUE);
+                    }
+
+                    frame = &vm.frames[vm.frameCount - 1];
+                    break;
+                }
+
+                if (!InvokeFromClass(superclass, method, argumentCount)) {
+                    return RUNTIME_ERROR(NULL_VALUE);
+                }
                 frame = &vm.frames[vm.frameCount - 1];
                 break;
             }
@@ -855,8 +973,24 @@ static InterpretResult Run() {
                 Push(OBJECT_VALUE(ClassNew(READ_STRING())));
                 break;
             }
+            case OP_INHERIT: {
+                Value superclass = Peek(1);
+
+                if (!IS_CLASS(superclass)) {
+                    RuntimeError("Classes can only inherit from other classes.");
+                    return RUNTIME_ERROR(NULL_VALUE);
+                }
+
+                ObjClass* subclass = AS_CLASS(Peek(0));
+                TableAddAll(&AS_CLASS(superclass)->methods, &subclass->methods);
+                TableAddAll(&AS_CLASS(superclass)->defaultFields, &subclass->defaultFields);
+                Pop();
+                break;
+            }
             case OP_METHOD: {
-                DefineMethod(READ_STRING());
+                if (!DefineMethod(READ_STRING())) {
+                    return RUNTIME_ERROR(NULL_VALUE);
+                }
                 break;
             }
             case OP_CLOSE_UPVALUE: {
@@ -865,16 +999,23 @@ static InterpretResult Run() {
                 break;
             }
             case OP_RETURN: {
-                Value Result = Pop();
+                Value result = Pop();
                 CloseUpvalues(frame->slots);
                 vm.frameCount--;
                 if (vm.frameCount == 0) {
+                    InterpretResult interpretResult = RUNTIME_OK(result);
+                    
+                    if (!IS_NULL(result)) {
+                        ValuePrint(result);
+                        printf("\n");
+                    }
+                    
                     Pop();
-                    return INTERPRET_OK;
+                    return interpretResult;
                 }
 
                 vm.stackTop = frame->slots;
-                Push(Result);
+                Push(result);
                 frame = &vm.frames[vm.frameCount - 1];
                 break;
             }
@@ -893,7 +1034,7 @@ InterpretResult Interpret(const char* source) {
     ObjFunction* function = Compile(source);
 
     if (function == NULL)
-        return INTERPRET_COMPILE_ERROR;
+        return COMPILE_ERROR(NULL_VALUE);
 
     Push(OBJECT_VALUE(function));
     ObjClosure* closure = ClosureNew(function);

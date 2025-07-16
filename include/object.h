@@ -105,6 +105,7 @@ typedef struct {
     ValueArray methodNames;
     Table methods;
     Table defaultFields;
+    Value constructor;
 } ObjClass;
 
 typedef struct {

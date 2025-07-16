@@ -28,10 +28,12 @@ typedef enum {
     OP_SET_PROPERTY,
     OP_GET_PROPERTY,
     OP_INIT_PROPERTY,
+    OP_GET_SUPER,
 
     OP_ARRAY,
     OP_MAP,
     OP_CLASS,
+    OP_INHERIT,
     OP_METHOD,
     
     OP_EQUAL,
@@ -59,6 +61,8 @@ typedef enum {
     OP_JUMP,
     OP_LOOP,
     OP_CALL,
+    OP_INVOKE,
+    OP_SUPER_INVOKE,
     OP_CLOSURE,
     OP_RETURN,          //Return from current function.
 } MJ_OpCode;

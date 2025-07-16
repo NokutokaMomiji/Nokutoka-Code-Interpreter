@@ -73,6 +73,7 @@ typedef struct Compiler {
 
 typedef struct ClassCompiler {
     struct ClassCompiler* enclosing;
+    bool hasSuperclass;
 } ClassCompiler;
 
 Parser parser;
@@ -291,6 +292,15 @@ static void VariableSetPrevious(bool canAssign);
 static ParseRule* CompilerGetRule(TokenType type);
 static void CompilerParsePrecedence(Precedence precedence);
 static void NamedVariable(Token name, bool canAssign);
+static Token SyntheticToken(const char* text);
+static void CompilerVariable(bool canAssign);
+
+static char* Substring(char* string, int length) {
+    char* heapChars = ALLOCATE(char, length + 1);
+    memcpy(heapChars, string, length);
+    heapChars[length] = '\0';
+    return heapChars;
+}
 
 static uint8_t IdentifierConstant(Token* name) {
     return CompilerMakeConstant(OBJECT_VALUE(StringCopy(name->start, name->length)));
@@ -488,6 +498,10 @@ static void CompilerDot(bool canAssign) {
     if (canAssign && Match(TOKEN_ASSIGN)) {
         CompilerExpression();
         CompilerEmitBytes(OP_SET_PROPERTY, name);
+    } else if (Match(TOKEN_PARENTHESIS_OPEN)) {
+        uint8_t argumentCount = ArgumentList();
+        CompilerEmitBytes(OP_INVOKE, name);
+        CompilerEmitByte(argumentCount);
     }
     else {
         CompilerEmitBytes(OP_GET_PROPERTY, name);
@@ -540,8 +554,14 @@ static void CompilerFunction(FunctionType type) {
     }
     CompilerConsume(TOKEN_PARENTHESIS_CLOSE, "Expected ')' after function parameters");
 
-    CompilerConsume(TOKEN_BRACKET_OPEN, "Expected '{' before function body");
-    CompilerBlock();
+    if (Match(TOKEN_FAT_ARROW)) {
+        CompilerExpression();
+        //CompilerConsume(TOKEN_SEMICOLON, "Expected ';' after function expression");
+        CompilerEmitByte(OP_RETURN);
+    } else {
+        CompilerConsume(TOKEN_BRACKET_OPEN, "Expected '{' before function body");
+        CompilerBlock();
+    }
 
     ObjFunction* function = CompilerEnd();
     CompilerEmitBytes(OP_CLOSURE, CompilerMakeConstant(OBJECT_VALUE(function)));
@@ -560,25 +580,11 @@ static void CompilerMethod(const char* className) {
 
     size_t classNameLength = strlen(className);
 
-    printf("previous: %s\nclassName: %s\nlength: %d\nclassNameLength: %lld\n",
-        parser.previous.start,
-        className,
-        parser.previous.length,
-        classNameLength
-    );
-
     if (parser.previous.length == classNameLength && memcmp(parser.previous.start, className, classNameLength) == 0) {
         type = TYPE_CONSTRUCTOR;
     }
 
-    if (type == TYPE_METHOD) {
-        printf("IS METHOD!\n");
-    } else if (type == TYPE_CONSTRUCTOR) {
-        printf("IS CONSTRUCTOR!\n");
-    }
-
     CompilerFunction(type);
-
     CompilerEmitBytes(OP_METHOD, constant);
 }
 
@@ -609,17 +615,34 @@ static void ClassDeclaration() {
     CompilerEmitBytes(OP_CLASS, nameConstant);
     DefineLocalVariable(nameConstant);
 
-    ClassCompiler ClassCompiler;
-    ClassCompiler.enclosing = currentClass;
-    currentClass = &ClassCompiler;
+    ClassCompiler classCompiler;
+    classCompiler.hasSuperclass = false;
+    classCompiler.enclosing = currentClass;
+    currentClass = &classCompiler;
+
+    CompilerBeginScope();
+
+    if (Match(TOKEN_COLON)) {
+        CompilerConsume(TOKEN_IDENTIFIER, "Expected superclass name");
+        CompilerVariable(false);
+
+        if (IdentifiersEqual(&className, &parser.previous)) {
+            Error("A class cannot inherit from itself");
+        }
+
+        AddLocal(SyntheticToken("super"));
+        DefineLocalVariable(0);
+
+        NamedVariable(className, false);
+        CompilerEmitByte(OP_INHERIT);
+        classCompiler.hasSuperclass = true;
+    }
 
     NamedVariable(className, false);
 
     CompilerConsume(TOKEN_BRACKET_OPEN, "Expected '{' before class body");
     
-    char* heapChars = ALLOCATE(char, className.length + 1);
-    memcpy(heapChars, className.start, className.length);
-    heapChars[className.length] = '\0';
+    char* classNameString = Substring(className.start, className.length);
 
     while (!Check(TOKEN_BRACKET_CLOSE) && !Check(TOKEN_EOF)) {
         if (Match(TOKEN_LOCAL)) {
@@ -627,18 +650,27 @@ static void ClassDeclaration() {
             continue;
         }
 
-        CompilerMethod(heapChars);
+        CompilerMethod(classNameString);
     }
 
-    FREE(char, heapChars);
+    FREE(char, classNameString);
 
     CompilerConsume(TOKEN_BRACKET_CLOSE, "Expected '}' after class body");
     CompilerEmitByte(OP_POP);
+
+    CompilerEndScope();
 
     currentClass = currentClass->enclosing;
 }
 
 static void FunctionDeclaration() {
+    // Checking because CompilerFunction consumes the opening parenthesis.
+    if (Check(TOKEN_PARENTHESIS_OPEN)) {
+        CompilerFunction(TYPE_LAMBDA);
+        return;
+    }
+
+    // Regular function;
     uint8_t global = ParseVariable("Expected function name");
     MarkInitialized();
     CompilerFunction(TYPE_FUNCTION);
@@ -1051,8 +1083,6 @@ static void NamedVariable(Token name, bool canAssign) {
     uint8_t getOp, setOp;
     int argument = ResolveLocal(current, &name);
 
-    printf("argument: %d\n", argument);
-
     if (argument != -1) {
         getOp = OP_GET_LOCAL;
         setOp = OP_SET_LOCAL;
@@ -1068,18 +1098,63 @@ static void NamedVariable(Token name, bool canAssign) {
     }
 
     if (canAssign && Match(TOKEN_ASSIGN)) {
-        printf("canAssign + matched token assign.\n");
         CompilerExpression();
         CompilerEmitBytes(setOp, (uint8_t)argument);
     }
     else {
-        printf("Resolving extra assignments.\n");
         ResolveExtraAssignments(getOp, setOp, argument);
     }
 }
 
 static void CompilerVariable(bool canAssign) {
     NamedVariable(parser.previous, canAssign);
+}
+
+static Token SyntheticToken(const char* text) {
+    Token token;
+    token.start = text;
+    token.length = (int)strlen(text);
+    return token;
+}
+
+static void CompilerSuper(bool canAssign) {
+    if (currentClass == NULL) {
+        Error("Cannot use \"super\" outside of a class");
+    } else if (!currentClass->hasSuperclass) {
+        Error("Cannot use \"super\" in a class with no superclass");
+    }
+
+    if (Match(TOKEN_PARENTHESIS_OPEN)) {
+        if (current->type != TYPE_CONSTRUCTOR) {
+            Error("Super cannot be called outside of the class' constructor");
+            return;
+        }
+
+        Token superToken = SyntheticToken("super");
+        uint8_t superName = IdentifierConstant(&superToken);
+        NamedVariable(SyntheticToken("this"), false);
+        uint8_t argumentCount = ArgumentList();
+        NamedVariable(superToken, false);
+        CompilerEmitBytes(OP_SUPER_INVOKE, superName);
+        CompilerEmitByte(argumentCount);
+        return;
+    }
+
+    CompilerConsume(TOKEN_DOT, "Expected '.' after \"super\".");
+    CompilerConsume(TOKEN_IDENTIFIER, "Expected superclass method name.");
+    uint8_t name = IdentifierConstant(&parser.previous);
+
+    NamedVariable(SyntheticToken("this"), false);
+    if (Match(TOKEN_PARENTHESIS_OPEN)) {
+        uint8_t argumentCount = ArgumentList();
+        NamedVariable(SyntheticToken("super"), false);
+        CompilerEmitBytes(OP_SUPER_INVOKE, name);
+        CompilerEmitByte(argumentCount);
+        return;
+    }
+
+    NamedVariable(SyntheticToken("super"), false);
+    CompilerEmitBytes(OP_GET_SUPER, name);
 }
 
 static void CompilerThis(bool canAssign) {
@@ -1228,7 +1303,7 @@ ParseRule rules[] = {
   [TOKEN_OR]                  = {NULL,             CompilerOr,     PREC_OR},
   [TOKEN_PRINT]               = {NULL,             NULL,           PREC_NONE},
   [TOKEN_RETURN]              = {NULL,             NULL,           PREC_NONE},
-  [TOKEN_SUPER]               = {NULL,             NULL,           PREC_NONE},
+  [TOKEN_SUPER]               = {CompilerSuper,    NULL,           PREC_NONE},
   [TOKEN_THIS]                = {CompilerThis,     NULL,           PREC_NONE},
   [TOKEN_TRUE]                = {CompilerLiteral,  NULL,           PREC_NONE},
   [TOKEN_MAYBE]               = {CompilerLiteral,  NULL,           PREC_NONE},

@@ -12,3 +12,34 @@ function fib(n) {
 }
 
 print(fib(1000));
+
+class Doughnut {
+  	var batter = "dough";
+
+	Doughnut(type) {
+		this.batter = type;
+	}
+
+ 	 cook() {
+ 	   print "Dunk in the fryer.";
+ 	   this.finish("sprinkles");
+ 	 }
+
+  	finish(ingredient) {
+  	  print "Finish with " + ingredient;
+  	}
+}
+
+class Cruller : Doughnut {
+	Cruller() {
+		super("hello");
+		print(this.batter);
+	}
+
+  	finish(ingredient) {
+    	// No sprinkles, always icing.
+    	super.finish("icing");
+  	}
+}
+
+var c = Cruller();

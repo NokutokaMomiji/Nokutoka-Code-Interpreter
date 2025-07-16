@@ -39,7 +39,16 @@ typedef enum {
     INTERPRET_OK,
     INTERPRET_COMPILE_ERROR,
     INTERPRET_RUNTIME_ERROR
+} InterpretResultStatus;
+
+typedef struct {
+    InterpretResultStatus status;
+    Value value;
 } InterpretResult;
+
+#define RUNTIME_ERROR(value) ((InterpretResult){INTERPRET_RUNTIME_ERROR, (Value)value})
+#define COMPILE_ERROR(value) ((InterpretResult){INTERPRET_COMPILE_ERROR, (Value)value})
+#define RUNTIME_OK(value) ((InterpretResult){INTERPRET_OK, (Value)value})
 
 extern VM vm;
 

@@ -128,6 +128,7 @@ ObjClass* ClassNew(ObjString* name) {
     ValueArrayInit(&Class->methodNames);
     TableInit(&Class->methods);
     TableInit(&Class->defaultFields);
+    Class->constructor = NULL_VALUE;
     return Class;
 }
 

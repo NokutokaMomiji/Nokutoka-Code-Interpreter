@@ -102,11 +102,11 @@ static char* ReadFile(const char* path) {
 }
 
 static void RunFile(const char* path) {
-    char* Source = ReadFile(path);
-    InterpretResult Result = Interpret(Source);
-    free(Source);
-    if (Result == INTERPRET_COMPILE_ERROR) exit(65);
-    if (Result == INTERPRET_RUNTIME_ERROR) exit(70);
+    char* source = ReadFile(path);
+    InterpretResult result = Interpret(source);
+    free(source);
+    if (result.status == INTERPRET_COMPILE_ERROR) exit(65);
+    if (result.status == INTERPRET_RUNTIME_ERROR) exit(70);
 }
 
 int main(int argc, const char* argv[]) {

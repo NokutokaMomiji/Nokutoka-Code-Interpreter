@@ -1,1 +1,2 @@
-make &&  .\bin\momiji 
+taskkill /F /IM momiji.exe
+make 

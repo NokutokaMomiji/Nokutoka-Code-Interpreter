@@ -60,6 +60,16 @@ static int ConstantLongInstruction(const char* name, MJ_Chunk* chunk, int offset
     return offset + 5;  // We skip over the Constant Operation Code + the 4 bytes that make up the long index.
 }
 
+static int InvokeInstruction(const char* name, MJ_Chunk* chunk, int offset) {
+    uint8_t constant = chunk->code[offset + 1];
+    uint8_t argumentCount = chunk->code[offset + 2];
+
+    printf("%-16s (%d args) %4d '", name, argumentCount, constant);
+    ValuePrint(chunk->constants.values[constant]);
+    printf("'\n");
+
+    return offset + 3;
+}
 /// @brief [DEBUG] Prints out an instruction from a Chunk array at the given offset.
 /// @param chunk Chunk array with instructions.
 /// @param offset Instruction offset.
@@ -77,7 +87,7 @@ int DisassembleInstruction(MJ_Chunk* chunk, int offset) {
             return ConstantLongInstruction("OP_CONSTANT_LONG", chunk, offset);
         case OP_NULL:
             return SimpleInstruction("OP_NULL", offset);
-        case OP_TRUE:
+        case OP_TRUE:   
             return SimpleInstruction("OP_TRUE", offset);
         case OP_FALSE:
             return SimpleInstruction("OP_FALSE", offset);
@@ -113,6 +123,8 @@ int DisassembleInstruction(MJ_Chunk* chunk, int offset) {
             return ConstantInstruction("OP_GET_PROPERTY", chunk, offset);
         case OP_INIT_PROPERTY:
             return ConstantInstruction("OP_INIT_PROPERTY", chunk, offset);
+        case OP_GET_SUPER:
+            return ConstantInstruction("OP_GET_SUPER", chunk, offset);
         case OP_EQUAL:
             return SimpleInstruction("OP_EQUAL", offset);
         case OP_NOT_EQUAL:
@@ -171,8 +183,14 @@ int DisassembleInstruction(MJ_Chunk* chunk, int offset) {
             return ByteInstruction("OP_MAP", chunk, offset);
         case OP_CLASS:
             return ConstantInstruction("OP_CLASS", chunk, offset);
+        case OP_INVOKE:
+            return InvokeInstruction("OP_INVOKE", chunk, offset);
+        case OP_INHERIT:
+            return SimpleInstruction("OP_INHERIT", offset);
         case OP_METHOD:
             return ConstantInstruction("OP_METHOD", chunk, offset);
+        case OP_SUPER_INVOKE:
+            return InvokeInstruction("OP_SUPER_INVOKE", chunk, offset);
         case OP_CLOSURE: {
             offset++;
             uint8_t Constant = chunk->code[offset++];

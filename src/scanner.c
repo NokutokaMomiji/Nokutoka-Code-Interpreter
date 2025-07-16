@@ -31,7 +31,7 @@ static bool ScannerAtEnd() {
 
 static Token TokenMake(TokenType type) {
     Token newToken;
-
+    
     newToken.type = type;
     newToken.start = scanner.start;
     newToken.length = (int)(scanner.current - scanner.start);
@@ -207,12 +207,25 @@ static TokenType IdentifierType() {
         case 'm': return CheckKeyword(1, "aybe", TOKEN_MAYBE);
         case 'n': return CheckKeyword(1, "ull", TOKEN_NULL);
         case 'o': return CheckKeyword(1, "r", TOKEN_OR);
-        case 'p': return CheckKeyword(1, "rint", TOKEN_PRINT);
+        case 'p': if (scanner.current - scanner.start > 1) {
+                switch(scanner.start[1]) {
+                    case 'r': {
+                        TokenType possible = CheckKeyword(2, "int", TOKEN_PRINT);
+
+                        if (possible == TOKEN_IDENTIFIER) {
+                            return CheckKeyword(2, "ivate", TOKEN_PRIVATE);
+                        }
+
+                        return possible;
+                    }
+                }
+            }//
         case 'r': return CheckKeyword(1, "eturn", TOKEN_RETURN);
         case 's': if (scanner.current - scanner.start > 1) {
                 switch(scanner.start[1]) {
                     case 't': return CheckKeyword(1, "atic", TOKEN_STATIC);
                     case 'w': return CheckKeyword(2, "itch", TOKEN_SWITCH);
+                    case 'u': return CheckKeyword(2, "per", TOKEN_SUPER);
                 }
             }
         case 't':
@@ -312,7 +325,7 @@ Token ScannerScanToken() {
         case '!':
             return TokenMake(ScannerMatch('=') ? TOKEN_NOT_EQUAL : TOKEN_NOT);
         case '=':
-            return TokenMake(ScannerMatch('=') ? TOKEN_EQUAL : TOKEN_ASSIGN);
+            return TokenMake(ScannerMatch('=') ? TOKEN_EQUAL : (ScannerMatch('>') ? TOKEN_FAT_ARROW : TOKEN_ASSIGN));
         case '>':
             return TokenMake(ScannerMatch('=') ? TOKEN_GREATER_EQ : TOKEN_GREATER);
         case '<':
